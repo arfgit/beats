@@ -1,0 +1,57 @@
+# deps
+node_modules/
+.pnp
+.pnp.js
+
+# build
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# env + secrets
+.env
+.env.local
+.env.*.local
+*serviceAccountKey*.json
+*firebase-adminsdk*.json
+
+# firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+pubsub-debug.log*
+functions/node_modules/
+
+# local-dev data fallback
+server/.data/
+server/.cache/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# agent / assistant config — local-only, never committed
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.cursorrules
+.github/copilot-instructions.md
+.aider*
+.continue/
+.codeium/
+GEMINI.md
+
+# testing
+coverage/
+.nyc_output/
