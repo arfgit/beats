@@ -1,6 +1,6 @@
 {
   "projects": {
-    "default": "beats-dev-ant",
-    "dev": "beats-dev-ant"
+    "default": "beats-prod-ant",
+    "prod": "beats-prod-ant"
   }
 }

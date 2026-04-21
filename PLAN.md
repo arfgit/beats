@@ -17,7 +17,7 @@ Greenfield rewrite of a legacy Next.js beat sequencer as a collaborative, neon-s
 | File storage | Firebase Storage via V4 signed URLs (client uploads direct) |
 | Auth | Firebase Auth (Google provider) |
 | Monorepo layout | `client/` / `server/` / `shared/` — workspaces |
-| Firebase project (dev) | `beats-dev-ant` (display name "beats-dev") |
+| Firebase project | `beats-prod-ant` (display name "beats-prod") |
 
 ---
 
@@ -33,7 +33,7 @@ Greenfield rewrite of a legacy Next.js beat sequencer as a collaborative, neon-s
 ├── firestore.indexes.json
 ├── storage.rules
 ├── cors.json
-├── .firebaserc                     # default project: beats-dev-ant
+├── .firebaserc                     # default project: beats-prod-ant
 ├── client/
 │   ├── package.json
 │   ├── vite.config.ts
@@ -394,7 +394,7 @@ Every phase ends in a shippable slice — no dev-only harness milestones.
 
 ### Phase 1 — Scaffold + auth
 **Goal:** monorepo bootstrapped, routing shell, Google sign-in end-to-end, Firebase emulators wired.
-**Deliverables:** workspaces, Vite + Tailwind v4 + tokens.css, Express `/api/health` + `/api/auth/session`, routing (Studio / Gallery / Profile / Admin / Auth), `authSlice`, Tooltip primitive, ErrorBoundary, pino logger + request-id middleware, `.firebaserc` → `beats-dev-ant`.
+**Deliverables:** workspaces, Vite + Tailwind v4 + tokens.css, Express `/api/health` + `/api/auth/session`, routing (Studio / Gallery / Profile / Admin / Auth), `authSlice`, Tooltip primitive, ErrorBoundary, pino logger + request-id middleware, `.firebaserc` → `beats-prod-ant`.
 **Verification:** `npm run dev` → blank synthwave-themed studio loads, sign in, `/api/auth/me` returns user.
 
 ### Phase 2a — Audio engine core
@@ -474,5 +474,5 @@ Every phase ends in a shippable slice — no dev-only harness milestones.
 - Commits: Conventional Commits format, lowercase subject including acronyms, no tool attribution of any kind
 - Solo project — no PR workflow; commit directly to `main` after local verification
 - Never push unless explicitly asked
-- Dev Firebase project: `beats-dev-ant` (alias `default`); prod project TBD
+- Firebase project: `beats-prod-ant` (alias `default`, also `prod`)
 - Before any phase-boundary commit: `npm run typecheck && npm run lint && npm run test`

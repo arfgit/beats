@@ -15,4 +15,4 @@ npm install
 npm run dev
 ```
 
-Firebase dev project: `beats-dev-ant` (display name "beats-dev").
+Firebase project: `beats-prod-ant` (display name "beats-prod").

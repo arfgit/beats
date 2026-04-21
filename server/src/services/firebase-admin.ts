@@ -16,7 +16,7 @@ function init() {
   const projectId =
     process.env.GCLOUD_PROJECT ??
     process.env.FIREBASE_PROJECT_ID ??
-    "beats-dev-ant";
+    "beats-prod-ant";
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (serviceAccountJson) {
