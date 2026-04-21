@@ -36,7 +36,7 @@ export function TrackRow({ track }: Props) {
     stepActiveBg[track.id] ?? "bg-neon-magenta/20 border-neon-magenta";
 
   return (
-    <div className="grid grid-cols-[160px_1fr] gap-3 items-start py-2 border-b border-grid/40 last:border-0">
+    <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3 items-start py-2 border-b border-grid/40 last:border-0">
       <div className="flex flex-col gap-1.5">
         <span
           className={clsx(
