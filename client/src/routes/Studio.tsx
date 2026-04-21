@@ -1,35 +1,72 @@
+import { useEffect } from "react";
 import { useBeatsStore } from "@/store/useBeatsStore";
+import { startPatternBridge } from "@/audio/bridge";
+import { TransportBar } from "@/features/studio/TransportBar";
+import { StepGrid } from "@/features/studio/StepGrid";
+import { SampleRow } from "@/features/studio/SampleRow";
+import { useSpaceToPlay } from "@/features/studio/useSpaceToPlay";
 
 export default function StudioRoute() {
-  const status = useBeatsStore((s) => s.auth.status);
+  const audioReady = useBeatsStore((s) => s.transport.audioReady);
+  const ensureEngineStarted = useBeatsStore((s) => s.ensureEngineStarted);
+  const tracks = useBeatsStore((s) => s.pattern.tracks);
+  useSpaceToPlay();
+
+  // Start the store ↔ engine bridge once the engine is running. The bridge
+  // primes the engine with the current pattern and subscribes to future changes.
+  useEffect(() => {
+    if (!audioReady) return;
+    const unsubscribe = startPatternBridge();
+    return unsubscribe;
+  }, [audioReady]);
 
   return (
-    <div className="py-12">
-      <h1
-        className="text-neon-cyan text-2xl tracking-[0.4em] uppercase mb-2"
-        style={{ textShadow: "var(--glow-cyan)" }}
-      >
-        studio
-      </h1>
-      <p className="text-ink-dim text-sm mb-8">
-        pattern editor lands in phase 2b.
-      </p>
+    <div className="py-8 space-y-6">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1
+            className="text-neon-cyan text-2xl tracking-[0.4em] uppercase"
+            style={{ textShadow: "var(--glow-cyan)" }}
+          >
+            studio
+          </h1>
+          <p className="text-ink-muted text-xs uppercase tracking-widest mt-1">
+            tap a step, pick a sample, press play
+          </p>
+        </div>
+        {!audioReady && (
+          <button
+            type="button"
+            onClick={() => void ensureEngineStarted()}
+            className="px-4 h-10 border border-neon-violet text-neon-violet rounded text-xs uppercase tracking-widest hover:bg-neon-violet hover:text-bg-void transition-colors duration-200 ease-in"
+          >
+            prime audio
+          </button>
+        )}
+      </header>
 
-      <div className="border border-grid rounded bg-bg-panel/60 p-8">
-        <div className="grid grid-cols-8 gap-2 mb-4">
-          {Array.from({ length: 32 }).map((_, i) => (
+      <TransportBar />
+
+      <StepGrid />
+
+      <section className="space-y-4">
+        <h2 className="text-ink-muted text-xs uppercase tracking-widest">
+          samples
+        </h2>
+        <div className="space-y-3">
+          {tracks.map((track) => (
             <div
-              key={i}
-              className="aspect-square border border-grid rounded bg-bg-panel-2/40"
-            />
+              key={track.id}
+              className="grid grid-cols-[90px_1fr] items-start gap-3"
+            >
+              <span className="text-xs uppercase tracking-widest text-ink-muted pt-1">
+                {track.kind}
+              </span>
+              <SampleRow trackId={track.id} kind={track.kind} />
+            </div>
           ))}
         </div>
-        <p className="text-ink-muted text-xs uppercase tracking-widest">
-          {status === "authed"
-            ? "signed in — ready to build"
-            : "sign in to save your work"}
-        </p>
-      </div>
+      </section>
     </div>
   );
 }
