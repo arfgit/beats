@@ -1,0 +1,41 @@
+{
+  "name": "@beats/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/functions.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@beats/shared": "*",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "firebase-admin": "^13.0.1",
+    "firebase-functions": "^6.1.1",
+    "nanoid": "^5.0.9",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.17.9",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2",
+    "pino-pretty": "^11.3.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.6"
+  },
+  "engines": {
+    "node": "20"
+  }
+}

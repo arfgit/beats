@@ -1,0 +1,29 @@
+{
+  "name": "beats",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n client,server -c magenta,cyan \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:client": "npm run dev -w client",
+    "dev:server": "npm run dev -w server",
+    "build": "npm run build -w shared && npm run build -w client && npm run build -w server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "emulators": "firebase emulators:start --only auth,firestore,storage,functions"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "firebase-tools": "^13.29.1",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
