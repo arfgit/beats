@@ -15,13 +15,10 @@ export default function AdminRoute() {
   return (
     <div className="py-8 space-y-6">
       <header>
-        <h1
-          className="text-neon-sun text-2xl tracking-[0.4em] uppercase"
-          style={{ textShadow: "0 0 10px rgba(255, 184, 0, 0.5)" }}
-        >
-          admin
+        <h1 className="text-ink text-lg tracking-[0.3em] uppercase font-normal">
+          <span className="text-neon-sun">/</span> admin
         </h1>
-        <p className="text-ink-muted text-xs uppercase tracking-widest mt-1">
+        <p className="text-ink-muted text-[10px] uppercase tracking-widest mt-1">
           users and projects moderation
         </p>
       </header>

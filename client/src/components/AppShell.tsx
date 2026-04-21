@@ -23,11 +23,8 @@ export function AppShell() {
       <header className="border-b border-grid bg-bg-panel/60 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <span
-              className="text-neon-magenta text-lg tracking-[0.3em] uppercase"
-              style={{ textShadow: "var(--glow-magenta)" }}
-            >
-              beats
+            <span className="text-ink text-sm tracking-[0.4em] uppercase">
+              <span className="text-neon-magenta">▮</span> beats
             </span>
             <nav className="flex gap-1 text-xs uppercase tracking-widest">
               {navItems.map((item) => (

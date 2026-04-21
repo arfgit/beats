@@ -2,7 +2,6 @@
 @import "tailwindcss";
 
 @theme {
-  /* expose design tokens as Tailwind utility classes */
   --color-bg-void: var(--bg-void);
   --color-bg-space: var(--bg-space);
   --color-bg-panel: var(--bg-panel);
@@ -24,20 +23,16 @@
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-html, body, #root {
-  height: 100%;
-}
+html, body, #root { height: 100%; }
 
 body {
-  background: var(--bg-space);
+  background: var(--bg-void);
   color: var(--ink);
   font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  background-image:
-    radial-gradient(circle at 20% 10%, rgba(184, 77, 255, 0.08), transparent 40%),
-    radial-gradient(circle at 80% 90%, rgba(255, 42, 109, 0.08), transparent 40%),
-    linear-gradient(180deg, var(--bg-void) 0%, var(--bg-space) 100%);
+  /* single subtle horizon line, not the busy radial backdrop */
+  background-image: linear-gradient(180deg, var(--bg-void) 0%, var(--bg-space) 100%);
   background-attachment: fixed;
 }
 
@@ -48,14 +43,10 @@ body {
 
 ::selection {
   background: var(--neon-magenta);
-  color: var(--ink);
+  color: var(--bg-void);
 }
 
-/* thin scrollbars matching synthwave aesthetic */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--grid) transparent;
-}
-*::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: var(--grid); border-radius: 4px; }
+* { scrollbar-width: thin; scrollbar-color: var(--grid) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-thumb { background: var(--grid); border-radius: 3px; }
 *::-webkit-scrollbar-thumb:hover { background: var(--neon-violet); }

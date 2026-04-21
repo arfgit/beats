@@ -13,10 +13,10 @@ const trackAccents: Record<string, string> = {
 };
 
 const stepActiveBg: Record<string, string> = {
-  "track-drums": "bg-neon-magenta/20 border-neon-magenta text-neon-magenta",
-  "track-bass": "bg-neon-sun/20 border-neon-sun text-neon-sun",
-  "track-guitar": "bg-neon-cyan/20 border-neon-cyan text-neon-cyan",
-  "track-vocals": "bg-neon-violet/20 border-neon-violet text-neon-violet",
+  "track-drums": "bg-neon-magenta/80 border-neon-magenta",
+  "track-bass": "bg-neon-sun/80 border-neon-sun",
+  "track-guitar": "bg-neon-cyan/80 border-neon-cyan",
+  "track-vocals": "bg-neon-violet/80 border-neon-violet",
 };
 
 interface Props {
@@ -95,7 +95,7 @@ export function TrackRow({ track }: Props) {
         <SampleRow trackId={track.id} kind={track.kind} />
       </div>
 
-      <div className="grid grid-cols-8 gap-1.5">
+      <div className="grid grid-cols-8 gap-1 sm:gap-1.5">
         {track.steps.map((step, i) => {
           const isCurrent = isPlaying && currentStep === i;
           const velocityScale = 0.4 + step.velocity * 0.6;
@@ -111,10 +111,10 @@ export function TrackRow({ track }: Props) {
                 aria-label={`${track.kind} step ${i + 1}`}
                 style={{ opacity: step.active ? velocityScale : 1 }}
                 className={clsx(
-                  "aspect-square rounded border transition-all duration-150 ease-in",
+                  "aspect-square min-h-[32px] rounded-sm border transition-colors duration-150 ease-in",
                   "motion-reduce:transition-none",
                   step.active
-                    ? `${activeBg} shadow-[0_0_8px_rgba(255,42,109,0.4)]`
+                    ? activeBg
                     : "bg-bg-panel-2/40 border-grid hover:border-neon-violet",
                   isCurrent &&
                     "ring-2 ring-neon-cyan ring-offset-2 ring-offset-bg-panel",

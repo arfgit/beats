@@ -77,36 +77,37 @@ export function applyEffectSnapshot(
 ): void {
   switch (effect.kind) {
     case "chorus":
-      applyWetParam(chain.chorus.wet, effect, "wet");
-      setIfPresent(chain.chorus.frequency, effect.params.frequency);
-      setIfPresent(chain.chorus.depth, effect.params.depth);
+      applyWet(chain.chorus.wet, effect);
+      rampSignal(chain.chorus.frequency, effect.params.frequency);
+      // Chorus.depth is a plain number accessor in Tone 15, not a Signal
+      if (isFinite(effect.params.depth))
+        chain.chorus.depth = effect.params.depth!;
       return;
     case "phaser":
-      applyWetParam(chain.phaser.wet, effect, "wet");
-      setIfPresent(chain.phaser.frequency, effect.params.frequency);
-      if (typeof effect.params.octaves === "number")
-        chain.phaser.octaves = effect.params.octaves;
+      applyWet(chain.phaser.wet, effect);
+      rampSignal(chain.phaser.frequency, effect.params.frequency);
+      // Phaser.octaves is a plain number accessor
+      if (isFinite(effect.params.octaves))
+        chain.phaser.octaves = effect.params.octaves!;
       return;
     case "tremolo":
-      applyWetParam(chain.tremolo.wet, effect, "wet");
-      setIfPresent(chain.tremolo.frequency, effect.params.frequency);
-      setIfPresent(chain.tremolo.depth, effect.params.depth);
+      applyWet(chain.tremolo.wet, effect);
+      rampSignal(chain.tremolo.frequency, effect.params.frequency);
+      rampSignal(chain.tremolo.depth, effect.params.depth);
       return;
     case "moogFilter":
       applyMoogBypass(chain, effect);
-      setIfPresent(chain.moogFilter.frequency, effect.params.cutoff);
-      if (typeof effect.params.resonance === "number")
-        chain.moogFilter.Q.value = effect.params.resonance;
+      rampSignal(chain.moogFilter.frequency, effect.params.cutoff);
+      rampSignal(chain.moogFilter.Q, effect.params.resonance);
       return;
   }
 }
 
-function applyWetParam(
+function applyWet(
   signal: Tone.Signal<"normalRange">,
   effect: EngineEffectSnapshot,
-  key: string,
 ): void {
-  const target = effect.enabled ? (effect.params[key] ?? 0.5) : 0;
+  const target = effect.enabled ? (effect.params.wet ?? 0.5) : 0;
   signal.rampTo(target, BYPASS_RAMP_SEC);
 }
 
@@ -114,16 +115,19 @@ function applyMoogBypass(
   chain: EffectsChain,
   effect: EngineEffectSnapshot,
 ): void {
-  const target = effect.enabled ? 1 : 0;
-  chain.moogCrossFade.fade.rampTo(target, BYPASS_RAMP_SEC);
+  chain.moogCrossFade.fade.rampTo(effect.enabled ? 1 : 0, BYPASS_RAMP_SEC);
 }
 
-function setIfPresent(
-  param: Tone.Param<Tone.UnitName>,
+function rampSignal(
+  signal: Tone.Signal<Tone.UnitName>,
   value: number | undefined,
 ): void {
-  if (typeof value === "number" && Number.isFinite(value))
-    param.rampTo(value, BYPASS_RAMP_SEC);
+  if (!isFinite(value)) return;
+  signal.rampTo(value!, BYPASS_RAMP_SEC);
+}
+
+function isFinite(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 export const EFFECT_ORDER: ReadonlyArray<EffectKind> = [

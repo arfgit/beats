@@ -82,11 +82,8 @@ export function UserProfileHeader({ user, editable }: Props) {
       ) : (
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
-            <h1
-              className="text-neon-violet text-2xl tracking-[0.3em] uppercase"
-              style={{ textShadow: "var(--glow-violet)" }}
-            >
-              {user.displayName}
+            <h1 className="text-ink text-lg tracking-[0.2em] font-normal">
+              <span className="text-neon-violet">/</span> {user.displayName}
             </h1>
             <p className="text-ink-muted text-[10px] uppercase tracking-widest">
               joined {new Date(user.createdAt).toLocaleDateString()}

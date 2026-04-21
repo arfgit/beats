@@ -77,13 +77,10 @@ export default function StudioRoute() {
       <div className="space-y-6">
         <header className="flex items-end justify-between flex-wrap gap-2">
           <div>
-            <h1
-              className="text-neon-cyan text-2xl tracking-[0.4em] uppercase"
-              style={{ textShadow: "var(--glow-cyan)" }}
-            >
-              studio
+            <h1 className="text-ink text-lg tracking-[0.3em] uppercase font-normal">
+              <span className="text-neon-cyan">/</span> studio
             </h1>
-            <p className="text-ink-muted text-xs uppercase tracking-widest mt-1">
+            <p className="text-ink-muted text-[10px] uppercase tracking-widest mt-1">
               tap a step · pick a sample · engage an effect · hit play
             </p>
           </div>
