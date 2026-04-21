@@ -10,6 +10,9 @@ import { logger } from "./lib/logger.js";
 import { AppError } from "./lib/errors.js";
 import healthRoutes from "./routes/health.js";
 import authRoutes from "./routes/auth.js";
+import projectRoutes from "./routes/projects.js";
+import trackRoutes from "./routes/tracks.js";
+import userRoutes from "./routes/users.js";
 
 export function createApp() {
   const app = express();
@@ -49,6 +52,9 @@ export function createApp() {
 
   app.use("/api", healthRoutes);
   app.use("/api", authRoutes);
+  app.use("/api", projectRoutes);
+  app.use("/api", trackRoutes);
+  app.use("/api", userRoutes);
 
   app.use((req, res) => {
     res.status(404).json({

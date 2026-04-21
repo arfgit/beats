@@ -21,6 +21,7 @@ export default function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<StudioRoute />} />
+            <Route path="studio/:projectId" element={<StudioRoute />} />
             <Route path="gallery" element={<GalleryRoute />} />
             <Route path="profile" element={<ProfileRoute />} />
             <Route path="admin" element={<AdminRoute />} />

@@ -7,12 +7,14 @@ import {
   createCommandHistorySlice,
   type CommandHistorySlice,
 } from "./commandHistorySlice";
+import { createProjectSlice, type ProjectSlice } from "./projectSlice";
 
 export type BeatsStore = AuthSlice &
   UiSlice &
   PatternSlice &
   TransportSlice &
-  CommandHistorySlice;
+  CommandHistorySlice &
+  ProjectSlice;
 
 export const useBeatsStore = create<BeatsStore>()((...a) => ({
   ...createAuthSlice(...a),
@@ -20,4 +22,17 @@ export const useBeatsStore = create<BeatsStore>()((...a) => ({
   ...createPatternSlice(...a),
   ...createTransportSlice(...a),
   ...createCommandHistorySlice(...a),
+  ...createProjectSlice(...a),
 }));
+
+// Wire pattern changes → project.dirty + debounced save. Subscribing at the
+// compose layer avoids slice-to-slice circular imports.
+let previousPattern = useBeatsStore.getState().pattern;
+useBeatsStore.subscribe((state) => {
+  if (state.pattern !== previousPattern && state.project.current) {
+    previousPattern = state.pattern;
+    state.markDirty();
+  } else if (state.pattern !== previousPattern) {
+    previousPattern = state.pattern;
+  }
+});
