@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { InviteDialog } from "./InviteDialog";
 
 const statusLabels: Record<string, { label: string; tone: string }> = {
   idle: { label: "unsaved draft", tone: "text-ink-muted" },
@@ -25,6 +26,7 @@ export function SaveShareBar() {
   const setTitle = useBeatsStore((s) => s.setTitle);
   const pushToast = useBeatsStore((s) => s.pushToast);
   const [draftTitle, setDraftTitle] = useState("untitled beat");
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const status = statusLabels[saveStatus] ?? statusLabels.idle!;
 
@@ -69,6 +71,15 @@ export function SaveShareBar() {
               fork
             </Button>
           </Tooltip>
+          <Tooltip label="invite someone to co-edit">
+            <Button variant="ghost" onClick={() => setInviteOpen(true)}>
+              invite
+            </Button>
+          </Tooltip>
+          <InviteDialog
+            open={inviteOpen}
+            onClose={() => setInviteOpen(false)}
+          />
           <span
             className={clsx(
               "text-[10px] uppercase tracking-widest ml-auto",

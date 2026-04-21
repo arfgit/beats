@@ -10,6 +10,7 @@ import { EffectsRack } from "@/features/studio/EffectsRack";
 import { RecorderPanel } from "@/features/studio/RecorderPanel";
 import { SaveShareBar } from "@/features/studio/SaveShareBar";
 import { ProjectList } from "@/features/studio/ProjectList";
+import { PeerCursors } from "@/features/studio/PeerCursors";
 import { useSpaceToPlay } from "@/features/studio/useSpaceToPlay";
 import { useUndoShortcuts } from "@/features/studio/useUndoShortcuts";
 
@@ -22,6 +23,9 @@ export default function StudioRoute() {
   const clearProject = useBeatsStore((s) => s.clearProject);
   const setLockOwner = useBeatsStore((s) => s.setLockOwner);
   const flushPendingQueue = useBeatsStore((s) => s.flushPendingQueue);
+  const startCollab = useBeatsStore((s) => s.startCollab);
+  const stopCollab = useBeatsStore((s) => s.stopCollab);
+  const authedUid = useBeatsStore((s) => s.auth.user?.id ?? null);
   useSpaceToPlay();
   useUndoShortcuts();
 
@@ -39,15 +43,26 @@ export default function StudioRoute() {
       void loadProject(projectId);
       lock = acquireLock(projectId, tabIdRef.current);
       lock.onChange(setLockOwner);
+      if (authedUid) startCollab(projectId);
     } else {
       clearProject();
       setLockOwner(true);
+      stopCollab();
     }
     return () => {
       lock?.release();
+      stopCollab();
       clearProject();
     };
-  }, [projectId, loadProject, clearProject, setLockOwner]);
+  }, [
+    projectId,
+    authedUid,
+    loadProject,
+    clearProject,
+    setLockOwner,
+    startCollab,
+    stopCollab,
+  ]);
 
   useEffect(() => {
     const handler = () => void flushPendingQueue();
@@ -72,15 +87,18 @@ export default function StudioRoute() {
               tap a step · pick a sample · engage an effect · hit play
             </p>
           </div>
-          {!audioReady && (
-            <button
-              type="button"
-              onClick={() => void ensureEngineStarted()}
-              className="px-4 h-10 border border-neon-violet text-neon-violet rounded text-xs uppercase tracking-widest hover:bg-neon-violet hover:text-bg-void transition-colors duration-200 ease-in motion-reduce:transition-none"
-            >
-              prime audio
-            </button>
-          )}
+          <div className="flex items-center gap-4">
+            <PeerCursors />
+            {!audioReady && (
+              <button
+                type="button"
+                onClick={() => void ensureEngineStarted()}
+                className="px-4 h-10 border border-neon-violet text-neon-violet rounded text-xs uppercase tracking-widest hover:bg-neon-violet hover:text-bg-void transition-colors duration-200 ease-in motion-reduce:transition-none"
+              >
+                prime audio
+              </button>
+            )}
+          </div>
         </header>
 
         <TransportBar />
