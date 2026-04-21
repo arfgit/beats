@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 import { produce } from "immer";
 import type { Pattern, EffectKind } from "@beats/shared";
 import { BPM_MAX, BPM_MIN, createDefaultPattern } from "@beats/shared";
+import { recordCommand, type CommandHistorySlice } from "./commandHistorySlice";
 
 export interface PatternSlice {
   pattern: Pattern;
@@ -30,12 +31,18 @@ export interface PatternSlice {
 const clamp = (n: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, n));
 
+/**
+ * Discrete user actions go through `recordCommand` so they participate in
+ * undo/redo. Continuous-knob changes (bpm, gain, effect params) update the
+ * pattern directly without polluting history — a Phase 3 refinement could
+ * add coalescing if users want to undo a knob turn.
+ */
 export const createPatternSlice: StateCreator<
-  PatternSlice,
+  PatternSlice & CommandHistorySlice,
   [],
   [],
   PatternSlice
-> = (set) => ({
+> = (set, get) => ({
   pattern: createDefaultPattern(),
 
   resetPattern: () => set({ pattern: createDefaultPattern() }),
@@ -43,15 +50,11 @@ export const createPatternSlice: StateCreator<
   setPattern: (pattern) => set({ pattern }),
 
   toggleStep: (trackId, stepIndex) =>
-    set((s) => ({
-      pattern: produce(s.pattern, (p) => {
-        const track = p.tracks.find((t) => t.id === trackId);
-        if (!track) return;
-        const step = track.steps[stepIndex];
-        if (!step) return;
-        step.active = !step.active;
-      }),
-    })),
+    recordCommand(get, set, "toggle step", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      const step = track?.steps[stepIndex];
+      if (step) step.active = !step.active;
+    }),
 
   setStepVelocity: (trackId, stepIndex, velocity) =>
     set((s) => ({
@@ -64,14 +67,12 @@ export const createPatternSlice: StateCreator<
     })),
 
   setTrackSample: (trackId, sampleId, sampleVersion) =>
-    set((s) => ({
-      pattern: produce(s.pattern, (p) => {
-        const track = p.tracks.find((t) => t.id === trackId);
-        if (!track) return;
-        track.sampleId = sampleId;
-        track.sampleVersion = sampleVersion;
-      }),
-    })),
+    recordCommand(get, set, "set sample", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      if (!track) return;
+      track.sampleId = sampleId;
+      track.sampleVersion = sampleVersion;
+    }),
 
   setTrackGain: (trackId, gain) =>
     set((s) => ({
@@ -83,22 +84,16 @@ export const createPatternSlice: StateCreator<
     })),
 
   toggleMute: (trackId) =>
-    set((s) => ({
-      pattern: produce(s.pattern, (p) => {
-        const track = p.tracks.find((t) => t.id === trackId);
-        if (!track) return;
-        track.muted = !track.muted;
-      }),
-    })),
+    recordCommand(get, set, "toggle mute", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      if (track) track.muted = !track.muted;
+    }),
 
   toggleSolo: (trackId) =>
-    set((s) => ({
-      pattern: produce(s.pattern, (p) => {
-        const track = p.tracks.find((t) => t.id === trackId);
-        if (!track) return;
-        track.soloed = !track.soloed;
-      }),
-    })),
+    recordCommand(get, set, "toggle solo", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      if (track) track.soloed = !track.soloed;
+    }),
 
   setBpm: (bpm) =>
     set((s) => ({
@@ -124,11 +119,8 @@ export const createPatternSlice: StateCreator<
     })),
 
   toggleEffect: (kind) =>
-    set((s) => ({
-      pattern: produce(s.pattern, (p) => {
-        const effect = p.effects.find((e) => e.kind === kind);
-        if (!effect) return;
-        effect.enabled = !effect.enabled;
-      }),
-    })),
+    recordCommand(get, set, "toggle effect", (draft) => {
+      const effect = draft.effects.find((e) => e.kind === kind);
+      if (effect) effect.enabled = !effect.enabled;
+    }),
 });
