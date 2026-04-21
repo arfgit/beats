@@ -23,6 +23,7 @@ export interface ProjectSlice {
     saveStatus: SaveStatus;
     lastError: string | null;
     isLockOwner: boolean;
+    applyingRemote: boolean;
     unsubscribeRemote: (() => void) | null;
   };
   createProject: (title: string, isPublic: boolean) => Promise<Project>;
@@ -39,6 +40,9 @@ export interface ProjectSlice {
 
 const SAVE_DEBOUNCE_MS = 800;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+// In-flight save guard: prevents concurrent PATCH requests and ensures any
+// edits that land during a save trigger a follow-up flush.
+let saveInFlight = false;
 
 export const createProjectSlice: StateCreator<
   BeatsStore,
@@ -52,6 +56,7 @@ export const createProjectSlice: StateCreator<
     saveStatus: "idle",
     lastError: null,
     isLockOwner: true,
+    applyingRemote: false,
     unsubscribeRemote: null,
   },
 
@@ -102,15 +107,39 @@ export const createProjectSlice: StateCreator<
           }
           const project = snap.data() as Project;
           const migrated: Pattern = migratePattern(project.pattern);
-          set((s) => ({
-            project: {
-              ...s.project,
-              current: { ...project, pattern: migrated },
-              saveStatus: s.project.dirty ? s.project.saveStatus : "saved",
-              lastError: null,
-            },
-            pattern: get().project.dirty ? s.pattern : migrated,
-          }));
+          const isDirty = get().project.dirty;
+
+          // Source-aware apply: when a remote snapshot lands while we have no
+          // local edits, we want to mirror the new pattern into the store WITHOUT
+          // the outer subscribe treating it as a user edit and firing markDirty.
+          if (!isDirty) {
+            set((s) => ({
+              project: {
+                ...s.project,
+                current: { ...project, pattern: migrated },
+                saveStatus: "saved",
+                lastError: null,
+                applyingRemote: true,
+              },
+              pattern: migrated,
+            }));
+            // Flip the flag back on the next tick once the subscribe has fired
+            setTimeout(() => {
+              set((s) => ({
+                project: { ...s.project, applyingRemote: false },
+              }));
+            }, 0);
+          } else {
+            // Local edits in flight — update the canonical `current` (revision,
+            // collaborators, etc.) but keep our in-memory pattern.
+            set((s) => ({
+              project: {
+                ...s.project,
+                current: { ...project, pattern: migrated },
+                lastError: null,
+              },
+            }));
+          }
         },
         (err) => {
           set((s) => ({
@@ -133,6 +162,10 @@ export const createProjectSlice: StateCreator<
 
   clearProject: () => {
     get().project.unsubscribeRemote?.();
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     set((s) => ({
       project: {
         ...s.project,
@@ -140,12 +173,18 @@ export const createProjectSlice: StateCreator<
         dirty: false,
         saveStatus: "idle",
         lastError: null,
+        applyingRemote: false,
         unsubscribeRemote: null,
       },
     }));
   },
 
   markDirty: () => {
+    // Remote snapshots apply through loadProject with applyingRemote=true;
+    // the outer subscribe calls markDirty but we ignore it here to avoid a
+    // save loop.
+    if (get().project.applyingRemote) return;
+
     set((s) => ({
       project: { ...s.project, dirty: true, saveStatus: "dirty" },
     }));
@@ -160,27 +199,38 @@ export const createProjectSlice: StateCreator<
   },
 
   flushSave: async () => {
+    if (saveInFlight) return;
     const current = get().project.current;
     if (!current) return;
     if (!get().project.isLockOwner) return;
 
+    saveInFlight = true;
     set((s) => ({ project: { ...s.project, saveStatus: "saving" } }));
-    const pattern = get().pattern;
+    const patternSnapshot = get().pattern;
+    const revisionSnapshot = current.revision;
 
     try {
-      const updated = await api.patch<Project>(`/projects/${current.id}`, {
-        pattern,
-      });
+      const updated = await api.patch<Project>(
+        `/projects/${current.id}`,
+        { pattern: patternSnapshot },
+        { headers: { "If-Match": String(revisionSnapshot) } },
+      );
       await dequeueSave(current.id);
+      const patternChangedDuringSave = get().pattern !== patternSnapshot;
       set((s) => ({
         project: {
           ...s.project,
           current: updated,
-          dirty: false,
-          saveStatus: "saved",
+          dirty: patternChangedDuringSave,
+          saveStatus: patternChangedDuringSave ? "dirty" : "saved",
           lastError: null,
         },
       }));
+      // If the user kept editing during the save, queue another one.
+      if (patternChangedDuringSave) {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => void get().flushSave(), SAVE_DEBOUNCE_MS);
+      }
     } catch (err) {
       if (err instanceof ApiCallError && err.apiError.code === "CONFLICT") {
         set((s) => ({
@@ -198,9 +248,9 @@ export const createProjectSlice: StateCreator<
       ) {
         await enqueueSave({
           projectId: current.id,
-          pattern,
+          pattern: patternSnapshot,
           queuedAt: Date.now(),
-          revisionAtQueue: current.revision,
+          revisionAtQueue: revisionSnapshot,
         });
         set((s) => ({
           project: { ...s.project, saveStatus: "offline", lastError: null },
@@ -212,6 +262,8 @@ export const createProjectSlice: StateCreator<
       set((s) => ({
         project: { ...s.project, saveStatus: "error", lastError: message },
       }));
+    } finally {
+      saveInFlight = false;
     }
   },
 
@@ -226,9 +278,13 @@ export const createProjectSlice: StateCreator<
           current: fork,
           dirty: false,
           saveStatus: "saved",
+          applyingRemote: true,
         },
         pattern: fork.pattern,
       }));
+      setTimeout(() => {
+        set((s) => ({ project: { ...s.project, applyingRemote: false } }));
+      }, 0);
       return fork;
     } catch (err) {
       const message =
@@ -244,9 +300,11 @@ export const createProjectSlice: StateCreator<
     const current = get().project.current;
     if (!current) return;
     try {
-      const updated = await api.patch<Project>(`/projects/${current.id}`, {
-        isPublic,
-      });
+      const updated = await api.patch<Project>(
+        `/projects/${current.id}`,
+        { isPublic },
+        { headers: { "If-Match": String(current.revision) } },
+      );
       set((s) => ({ project: { ...s.project, current: updated } }));
     } catch (err) {
       const message =
@@ -261,9 +319,11 @@ export const createProjectSlice: StateCreator<
     const current = get().project.current;
     if (!current) return;
     try {
-      const updated = await api.patch<Project>(`/projects/${current.id}`, {
-        title,
-      });
+      const updated = await api.patch<Project>(
+        `/projects/${current.id}`,
+        { title },
+        { headers: { "If-Match": String(current.revision) } },
+      );
       set((s) => ({ project: { ...s.project, current: updated } }));
     } catch (err) {
       const message =
@@ -282,9 +342,11 @@ export const createProjectSlice: StateCreator<
     const pending = await listPending();
     for (const save of pending) {
       try {
-        await api.patch<Project>(`/projects/${save.projectId}`, {
-          pattern: save.pattern,
-        });
+        await api.patch<Project>(
+          `/projects/${save.projectId}`,
+          { pattern: save.pattern },
+          { headers: { "If-Match": String(save.revisionAtQueue) } },
+        );
         await dequeueSave(save.projectId);
       } catch {
         // leave in queue for later retry

@@ -115,10 +115,25 @@ class AudioEngine {
 
   /** Load and assign a sample to a specific track voice. */
   async attachSample(trackId: string, sample: SampleRef): Promise<void> {
+    return this.attachSampleIfCurrent(trackId, sample, () => true);
+  }
+
+  /**
+   * Same as attachSample but consults `isStillCurrent` after the decode
+   * resolves. If the caller's request is stale (a newer sample has been
+   * requested for the same track), the decoded buffer is discarded rather
+   * than overwriting what the user has since selected.
+   */
+  async attachSampleIfCurrent(
+    trackId: string,
+    sample: SampleRef,
+    isStillCurrent: () => boolean,
+  ): Promise<void> {
     const ints = this.requireStarted();
     const voice = ints.voices.get(trackId);
     if (!voice) throw new Error(`unknown trackId: ${trackId}`);
     const buffer = await ints.samplePool.load(sample);
+    if (!isStillCurrent()) return;
     const key = ints.samplePool.key(sample);
     if (voice.currentBufferKey === key) return;
     setVoiceBuffer(voice, buffer, key);
@@ -137,7 +152,18 @@ class AudioEngine {
 
   async startRecording(): Promise<void> {
     const ints = this.requireStarted();
-    await ints.recorder.start((dest) => ints.recordTap.connect(dest));
+    await ints.recorder.start((dest) => {
+      ints.recordTap.connect(dest);
+      // Return a detach that disconnects recordTap from exactly this
+      // destination — passing the node to disconnect() scopes the op.
+      return () => {
+        try {
+          ints.recordTap.disconnect(dest);
+        } catch {
+          // already disconnected — ignore
+        }
+      };
+    });
   }
 
   async stopRecording(): Promise<Blob> {

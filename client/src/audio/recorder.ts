@@ -2,8 +2,6 @@ import * as Tone from "tone";
 import { MAX_RECORDING_MS } from "@beats/shared";
 import type { EngineSubscribers } from "./subscribers";
 
-// Inline worker URL import via Vite — the `?worker&url` query yields a URL
-// that Vite bundles and serves correctly in dev and prod.
 // eslint-disable-next-line import/no-unresolved
 import wavEncoderUrl from "@/workers/wav-encoder.ts?worker&url";
 
@@ -17,17 +15,20 @@ interface RecorderState {
   active: boolean;
   mediaRecorder: MediaRecorder | null;
   streamDest: MediaStreamAudioDestinationNode | null;
+  detach: (() => void) | null;
   chunks: Blob[];
   startedAt: number;
   capTimer: ReturnType<typeof setTimeout> | null;
   tickTimer: ReturnType<typeof setInterval> | null;
   mimeType: string;
+  finalBlobPromise: Promise<Blob> | null;
+  resolveFinalBlob: ((blob: Blob) => void) | null;
 }
 
 export interface RecorderController {
   isRecording: () => boolean;
   start: (
-    attachTap: (node: MediaStreamAudioDestinationNode) => void,
+    attachTap: (node: MediaStreamAudioDestinationNode) => () => void,
   ) => Promise<void>;
   stop: () => Promise<Blob>;
   dispose: () => void;
@@ -40,11 +41,14 @@ export function createRecorder(
     active: false,
     mediaRecorder: null,
     streamDest: null,
+    detach: null,
     chunks: [],
     startedAt: 0,
     capTimer: null,
     tickTimer: null,
     mimeType: "audio/webm",
+    finalBlobPromise: null,
+    resolveFinalBlob: null,
   };
 
   const resetTimers = () => {
@@ -56,6 +60,8 @@ export function createRecorder(
 
   const teardown = () => {
     resetTimers();
+    state.detach?.();
+    state.detach = null;
     if (state.streamDest) {
       state.streamDest.disconnect();
       state.streamDest = null;
@@ -63,6 +69,8 @@ export function createRecorder(
     state.mediaRecorder = null;
     state.chunks = [];
     state.active = false;
+    state.finalBlobPromise = null;
+    state.resolveFinalBlob = null;
   };
 
   return {
@@ -73,21 +81,42 @@ export function createRecorder(
       const mimeType = pickMimeType();
       const rawCtx = Tone.getContext().rawContext as unknown as AudioContext;
       const streamDest = rawCtx.createMediaStreamDestination();
-      attachTap(streamDest);
+      const detach = attachTap(streamDest);
 
       const mediaRecorder = new MediaRecorder(streamDest.stream, { mimeType });
       state.mediaRecorder = mediaRecorder;
       state.streamDest = streamDest;
+      state.detach = detach;
       state.chunks = [];
       state.mimeType = mimeType;
       state.startedAt = performance.now();
       state.active = true;
 
+      // Install onstop / ondataavailable before start so the hard-cap
+      // race can't fire stop() before we're listening.
+      state.finalBlobPromise = new Promise<Blob>((resolve) => {
+        state.resolveFinalBlob = resolve;
+      });
+
       mediaRecorder.ondataavailable = (evt) => {
         if (evt.data && evt.data.size > 0) state.chunks.push(evt.data);
       };
+      mediaRecorder.onstop = () => {
+        if (state.resolveFinalBlob) {
+          state.resolveFinalBlob(
+            new Blob(state.chunks, { type: state.mimeType }),
+          );
+          state.resolveFinalBlob = null;
+        }
+        // Mark inactive immediately so any follow-on stop() short-circuits.
+        state.active = false;
+        subscribers.emit("rec", {
+          active: false,
+          elapsedMs: Math.round(performance.now() - state.startedAt),
+        });
+      };
 
-      mediaRecorder.start(1000); // timeslice to flush chunks incrementally
+      mediaRecorder.start(1000);
 
       subscribers.emit("rec", { active: true, elapsedMs: 0 });
       state.tickTimer = setInterval(() => {
@@ -98,35 +127,38 @@ export function createRecorder(
       }, 250);
 
       state.capTimer = setTimeout(() => {
-        // hard cap: stop the recorder; caller's promise resolves normally
-        if (state.active && state.mediaRecorder?.state === "recording") {
+        if (state.mediaRecorder?.state === "recording") {
           state.mediaRecorder.stop();
         }
       }, MAX_RECORDING_MS);
     },
 
     stop: async () => {
-      if (!state.active || !state.mediaRecorder) {
+      // Snapshot the promise before any teardown — the cap timer may have
+      // already fired onstop, in which case the promise already resolved.
+      const finalBlobPromise = state.finalBlobPromise;
+      if (!finalBlobPromise) {
         throw new Error("recorder not running");
       }
       const recorder = state.mediaRecorder;
-      const containerBlob: Blob = await new Promise((resolve) => {
-        recorder.onstop = () =>
-          resolve(new Blob(state.chunks, { type: state.mimeType }));
-        if (recorder.state === "recording") recorder.stop();
-      });
+      if (recorder?.state === "recording") recorder.stop();
+
+      const containerBlob = await finalBlobPromise;
       const mimeType = state.mimeType;
-      subscribers.emit("rec", {
-        active: false,
-        elapsedMs: Math.round(performance.now() - state.startedAt),
-      });
       teardown();
       return encodeInWorker(containerBlob, mimeType);
     },
 
     dispose: () => {
-      if (state.active && state.mediaRecorder?.state === "recording") {
-        state.mediaRecorder.stop();
+      const recorder = state.mediaRecorder;
+      if (recorder?.state === "recording") recorder.stop();
+      // Resolve the pending promise with whatever chunks we have so any
+      // caller awaiting stop() unblocks.
+      if (state.resolveFinalBlob) {
+        state.resolveFinalBlob(
+          new Blob(state.chunks, { type: state.mimeType }),
+        );
+        state.resolveFinalBlob = null;
       }
       teardown();
     },

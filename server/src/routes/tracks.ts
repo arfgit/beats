@@ -3,7 +3,11 @@ import { nanoid } from "nanoid";
 import type { UploadedTrack } from "@beats/shared";
 import { db, storage } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
-import { ForbiddenError, NotFoundError } from "../lib/errors.js";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "../lib/errors.js";
 import { validateBody } from "../lib/validate.js";
 import { finalizeTrackBody, uploadUrlBody } from "../lib/schemas.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
@@ -79,8 +83,30 @@ router.post(
       if (track.ownerId !== req.auth!.uid)
         return next(ForbiddenError("owner only"));
 
-      const [exists] = await storage.bucket().file(track.storagePath).exists();
+      const file = storage.bucket().file(track.storagePath);
+      const [exists] = await file.exists();
       if (!exists) return next(NotFoundError("upload did not land in storage"));
+
+      const [metadata] = await file.getMetadata();
+      const size = Number(metadata.size ?? 0);
+      const contentType = String(metadata.contentType ?? "");
+
+      // 2 min stereo 48k 16-bit PCM WAV ≈ 23 MB; cap with headroom
+      const MAX_BYTES = 32 * 1024 * 1024;
+      if (size > MAX_BYTES) {
+        await file.delete().catch(() => undefined);
+        await ref.delete();
+        return next(ValidationError(`upload exceeds ${MAX_BYTES} bytes`));
+      }
+
+      const ALLOWED = ["audio/wav", "audio/mpeg", "audio/webm", "audio/mp4"];
+      if (!ALLOWED.some((t) => contentType.startsWith(t))) {
+        await file.delete().catch(() => undefined);
+        await ref.delete();
+        return next(
+          ValidationError(`unsupported content type: ${contentType}`),
+        );
+      }
 
       const updated: UploadedTrack & { status: "ready" } = {
         ...track,

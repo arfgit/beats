@@ -8,17 +8,50 @@ import { updateUserBody } from "../lib/schemas.js";
 
 const router = Router();
 
+/**
+ * Public profile read — auth required. For private profiles we only
+ * return the minimum identity fields so the viewer can't enumerate
+ * email / bio / social links / role.
+ */
 router.get(
   "/users/:uid",
+  requireAuth,
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
       const snap = await db.collection("users").doc(req.params.uid!).get();
       if (!snap.exists) return next(NotFoundError("user not found"));
       const user = snap.data() as User;
-      // Strip email for non-self public reads
-      const { email, ...publicFields } = user;
-      void email;
-      res.json({ data: publicFields });
+      const isSelf = user.id === req.auth!.uid;
+
+      if (isSelf) {
+        res.json({ data: user });
+        return;
+      }
+
+      if (user.isPublic) {
+        res.json({
+          data: {
+            id: user.id,
+            displayName: user.displayName,
+            photoUrl: user.photoUrl,
+            bio: user.bio,
+            socialLinks: user.socialLinks,
+            isPublic: true,
+            createdAt: user.createdAt,
+          },
+        });
+        return;
+      }
+
+      // Private profile — minimal identity only
+      res.json({
+        data: {
+          id: user.id,
+          displayName: user.displayName,
+          photoUrl: user.photoUrl,
+          isPublic: false,
+        },
+      });
     } catch (err) {
       next(err);
     }

@@ -3,7 +3,12 @@ import { nanoid } from "nanoid";
 import type { Project } from "@beats/shared";
 import { db } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
-import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "../lib/errors.js";
 import { validateBody } from "../lib/validate.js";
 import {
   createProjectBody,
@@ -72,6 +77,11 @@ router.patch(
     try {
       const ref = db.collection("projects").doc(req.params.id!);
       const ifMatch = req.header("if-match");
+      if (!ifMatch || !/^\d+$/.test(ifMatch)) {
+        return next(
+          ValidationError("If-Match header with numeric revision is required"),
+        );
+      }
 
       const result = await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
@@ -79,16 +89,25 @@ router.patch(
         const project = snap.data() as Project;
         if (!canEdit(project, req.auth!.uid)) throw ForbiddenError();
 
-        if (ifMatch && Number(ifMatch) !== project.revision) {
+        if (Number(ifMatch) !== project.revision) {
           throw ConflictError(
             `revision mismatch (have ${project.revision}, got ${ifMatch})`,
           );
         }
 
         const updates = req.body as Partial<Project>;
+        const isOwner = project.ownerId === req.auth!.uid;
+        // Collaborators may only update the pattern; visibility, title,
+        // and collaborator list are owner-only
+        const safeUpdates: Partial<Project> = isOwner
+          ? updates
+          : updates.pattern
+            ? { pattern: updates.pattern }
+            : {};
+
         const updated: Project = {
           ...project,
-          ...updates,
+          ...safeUpdates,
           revision: project.revision + 1,
           updatedAt: Date.now(),
         };
