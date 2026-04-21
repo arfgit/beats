@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import { audioEngine } from "@/audio/engine";
 import { resolveBuiltInUrl } from "@/data/builtinSamples";
+import { track } from "@/lib/analytics";
 
 export interface TransportSlice {
   transport: {
@@ -48,12 +49,14 @@ export const createTransportSlice: StateCreator<
     await get().ensureEngineStarted();
     await audioEngine.play();
     set((s) => ({ transport: { ...s.transport, isPlaying: true } }));
+    track("play");
   },
 
   stop: () => {
     if (!audioEngine.isStarted()) return;
     audioEngine.stop();
     set((s) => ({ transport: { ...s.transport, isPlaying: false } }));
+    track("stop");
   },
 
   togglePlay: async () => {
@@ -65,6 +68,7 @@ export const createTransportSlice: StateCreator<
     await get().ensureEngineStarted();
     await audioEngine.startRecording();
     set((s) => ({ transport: { ...s.transport, isRecording: true } }));
+    track("record_start");
   },
 
   stopRecording: async () => {
@@ -72,6 +76,7 @@ export const createTransportSlice: StateCreator<
     try {
       const blob = await audioEngine.stopRecording();
       set((s) => ({ transport: { ...s.transport, isRecording: false } }));
+      track("record_stop", { bytes: blob.size });
       return blob;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

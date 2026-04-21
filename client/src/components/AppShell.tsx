@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
+import { useRouteTracker } from "@/lib/useRouteTracker";
 import { Button } from "./ui/Button";
 import { Tooltip } from "./ui/Tooltip";
 
@@ -15,6 +16,7 @@ export function AppShell() {
   const user = useBeatsStore((s) => s.auth.user);
   const signInWithGoogle = useBeatsStore((s) => s.signInWithGoogle);
   const signOut = useBeatsStore((s) => s.signOut);
+  useRouteTracker();
 
   return (
     <div className="min-h-screen flex flex-col">
