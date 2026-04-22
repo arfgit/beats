@@ -28,6 +28,12 @@ export interface TrackStep {
 export interface Track {
   id: string;
   kind: TrackKind;
+  /**
+   * Optional user-editable label. Falls back to kind when absent — two
+   * drums rows both read as "drums" without this, which is confusing
+   * once multiple tracks of the same kind are allowed.
+   */
+  name?: string;
   sampleId: string | null;
   sampleVersion: number | null;
   gain: number;

@@ -36,6 +36,8 @@ export function MatrixGrid() {
   const toggleCellEnabled = useBeatsStore((s) => s.toggleCellEnabled);
   const reorderCells = useBeatsStore((s) => s.reorderCells);
   const generateDemoBeat = useBeatsStore((s) => s.generateDemoBeat);
+  const clearAllCellSteps = useBeatsStore((s) => s.clearAllCellSteps);
+  const toggleAllCellsEnabled = useBeatsStore((s) => s.toggleAllCellsEnabled);
   const [seeding, setSeeding] = useState(false);
 
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
@@ -94,10 +96,28 @@ export function MatrixGrid() {
           </h2>
           <InfoIcon label="each cell is a full mixer. play cycles enabled cells in row-major order at every bar boundary. drag to reorder, click the dot to enable/disable." />
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <p className="text-[10px] uppercase tracking-widest text-ink-muted">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[10px] uppercase tracking-widest text-ink-muted hidden lg:block">
             drag to reorder · click to edit · dot toggles
           </p>
+          <Tooltip label="flip enabled/disabled on every cell in the matrix">
+            <button
+              type="button"
+              onClick={() => toggleAllCellsEnabled()}
+              className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none"
+            >
+              toggle all
+            </button>
+          </Tooltip>
+          <Tooltip label="deactivate every step on every row in every cell">
+            <button
+              type="button"
+              onClick={() => clearAllCellSteps()}
+              className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-red hover:text-neon-red text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none"
+            >
+              clear matrix
+            </button>
+          </Tooltip>
           <Tooltip label="overwrite the matrix with a pre-programmed 9-cell beat">
             <button
               type="button"

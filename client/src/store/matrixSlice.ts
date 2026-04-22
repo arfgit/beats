@@ -55,6 +55,10 @@ export interface MatrixSlice {
   addTrack: (cellId: string, kind: TrackKind) => void;
   /** Remove a track from the cell. No-op when it would leave the cell empty. */
   removeTrack: (cellId: string, trackId: string) => void;
+  /** Deactivate every step on every track across every cell in the matrix. */
+  clearAllCellSteps: () => void;
+  /** Flip `enabled` on every cell in the matrix. */
+  toggleAllCellsEnabled: () => void;
   /**
    * Replace the matrix with a pre-programmed demo beat that uses all 9
    * cells in a progressive arrangement. Fetches samples for each kind
@@ -191,6 +195,30 @@ export const createMatrixSlice: StateCreator<
           cell.pattern.tracks = cell.pattern.tracks.filter(
             (t) => t.id !== trackId,
           );
+        }),
+      }));
+    },
+
+    clearAllCellSteps: () => {
+      set((s) => ({
+        matrix: produce(s.matrix, (draft) => {
+          for (const cell of draft.cells) {
+            for (const track of cell.pattern.tracks) {
+              for (const step of track.steps) step.active = false;
+            }
+          }
+        }),
+      }));
+      // Also reflect the wipe onto the currently-loaded flat pattern so the
+      // grid UI shows the cleared state immediately (matrix mirror alone
+      // leaves the pattern slice stale until the next cell-switch).
+      get().loadCellIntoPattern(get().selectedCellId);
+    },
+
+    toggleAllCellsEnabled: () => {
+      set((s) => ({
+        matrix: produce(s.matrix, (draft) => {
+          for (const cell of draft.cells) cell.enabled = !cell.enabled;
         }),
       }));
     },

@@ -19,6 +19,8 @@ export interface PatternSlice {
     sampleId: string,
     sampleVersion: number,
   ) => void;
+  /** Rename a track — empty string clears back to the kind default. */
+  setTrackName: (trackId: string, name: string) => void;
   setTrackGain: (trackId: string, gain: number) => void;
   toggleMute: (trackId: string) => void;
   toggleSolo: (trackId: string) => void;
@@ -80,6 +82,18 @@ export const createPatternSlice: StateCreator<
       if (!track) return;
       track.sampleId = sampleId;
       track.sampleVersion = sampleVersion;
+    }),
+
+  setTrackName: (trackId, name) =>
+    recordCommand(get, set, "rename track", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      if (!track) return;
+      const trimmed = name.trim();
+      if (trimmed.length === 0) {
+        delete track.name;
+      } else {
+        track.name = trimmed.slice(0, 40);
+      }
     }),
 
   setTrackGain: (trackId, gain) =>

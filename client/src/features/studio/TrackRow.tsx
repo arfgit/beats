@@ -4,6 +4,7 @@ import { TRACK_KINDS } from "@beats/shared";
 import type { Track, TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { polishSampleName } from "@/lib/sampleNames";
 import { useStep } from "./useStep";
 import { SampleRow } from "./SampleRow";
 
@@ -53,6 +54,7 @@ export function TrackRow({ track, index }: Props) {
   const resetTrackMixer = useBeatsStore((s) => s.resetTrackMixer);
   const clearTrackSample = useBeatsStore((s) => s.clearTrackSample);
   const removeTrack = useBeatsStore((s) => s.removeTrack);
+  const setTrackName = useBeatsStore((s) => s.setTrackName);
   const trackCount = useBeatsStore((s) => s.pattern.tracks.length);
   const selectedCellId = useBeatsStore((s) => s.selectedCellId);
   const activeCellId = useBeatsStore((s) => s.activeCellId);
@@ -72,11 +74,16 @@ export function TrackRow({ track, index }: Props) {
   // sampleId if the samplesSlice hasn't populated yet; the slice fetches
   // lazily so the id is the best we have on first paint.
   const currentSample = track.sampleId ? findSampleById(track.sampleId) : null;
-  const sampleLabel = currentSample?.name ?? track.sampleId ?? "no sample";
+  const polishedSampleName = currentSample
+    ? polishSampleName(currentSample.name)
+    : null;
+  const sampleLabel = polishedSampleName ?? track.sampleId ?? "no sample";
   // Short 1-3 char glyph shown inside active step cells so the user can
   // tell at a glance which sample is on each row without reading the
   // dropdown below. "Kick 808" → "K8", "Juno Bass 70" → "JB7".
-  const sampleGlyph = currentSample ? makeSampleGlyph(currentSample.name) : "";
+  const sampleGlyph = polishedSampleName
+    ? makeSampleGlyph(polishedSampleName)
+    : "";
   const [dragOver, setDragOver] = useState(false);
 
   const labelColor = kindAccent[track.kind];
@@ -120,8 +127,8 @@ export function TrackRow({ track, index }: Props) {
         loadCellIntoPattern(selectedCellId);
       }}
     >
-      <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)] gap-3 lg:gap-5 items-center">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] gap-3 lg:gap-5 items-center">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
           <Tooltip label="drag to reorder">
             <span
               role="button"
@@ -158,16 +165,42 @@ export function TrackRow({ track, index }: Props) {
               ⋮⋮
             </span>
           </Tooltip>
+          <Tooltip label="rename this row — leave empty to reset to the kind">
+            <input
+              type="text"
+              defaultValue={track.name ?? ""}
+              placeholder={track.kind}
+              maxLength={40}
+              onBlur={(e) => {
+                if ((e.target.value.trim() || null) !== (track.name ?? null)) {
+                  setTrackName(track.id, e.target.value);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+                if (e.key === "Escape") {
+                  e.currentTarget.value = track.name ?? "";
+                  e.currentTarget.blur();
+                }
+              }}
+              aria-label={`${track.name ?? track.kind} row name`}
+              className={clsx(
+                "h-7 w-[88px] px-1 bg-bg-panel-2 border border-grid rounded text-[10px] uppercase tracking-widest font-mono",
+                "focus-visible:outline-none focus-visible:border-neon-violet",
+                "placeholder:text-ink-muted/60",
+                labelColor,
+              )}
+            />
+          </Tooltip>
           <Tooltip label="instrument kind — changing wipes the row">
             <select
               value={track.kind}
               onChange={(e) => onKindChange(e.target.value as TrackKind)}
               aria-label={`${track.kind} row instrument`}
               className={clsx(
-                "h-7 px-1 bg-bg-panel-2 border border-grid rounded text-[10px] uppercase tracking-widest font-mono",
+                "h-7 px-1 bg-bg-panel-2 border border-grid rounded text-[9px] uppercase tracking-widest font-mono text-ink-muted",
                 "focus-visible:outline-none focus-visible:border-neon-violet",
                 "cursor-pointer",
-                labelColor,
               )}
             >
               {TRACK_KINDS.map((kind) => (
@@ -223,6 +256,66 @@ export function TrackRow({ track, index }: Props) {
               className="flex-1 min-w-0"
             />
           </Tooltip>
+        </div>
+
+        <div className="grid grid-cols-[repeat(8,minmax(32px,1fr))] sm:grid-cols-[repeat(8,minmax(40px,1fr))] gap-1 sm:gap-1.5 lg:gap-2 min-w-0">
+          {track.steps.map((step, i) => {
+            const isCurrent = isLiveCell && currentStep === i;
+            const velocityScale = 0.4 + step.velocity * 0.6;
+            const hasSample = track.sampleId !== null;
+            return (
+              <Tooltip
+                key={i}
+                label={
+                  hasSample
+                    ? `step ${i + 1}${step.active ? ` · on · ${sampleLabel}` : ""}`
+                    : `pick a ${track.kind} sample first`
+                }
+              >
+                <button
+                  type="button"
+                  disabled={!hasSample}
+                  onClick={() => {
+                    if (!hasSample) return;
+                    toggleStep(track.id, i);
+                  }}
+                  aria-pressed={step.active}
+                  aria-label={`${track.kind} step ${i + 1}`}
+                  style={{ opacity: step.active ? velocityScale : 1 }}
+                  className={clsx(
+                    "h-11 lg:h-12 w-full rounded-sm border transition-colors duration-150 ease-in",
+                    "motion-reduce:transition-none",
+                    "flex items-center justify-center",
+                    "font-mono text-[10px] tracking-tight leading-none uppercase",
+                    step.active
+                      ? activeBg
+                      : hasSample
+                        ? "bg-bg-panel-2 border-grid hover:border-ink-muted cursor-pointer"
+                        : "bg-bg-panel-2/70 border-dashed border-grid cursor-not-allowed",
+                    isCurrent &&
+                      "ring-2 ring-neon-cyan ring-offset-2 ring-offset-bg-panel",
+                  )}
+                >
+                  {step.active && sampleGlyph && (
+                    <span
+                      aria-hidden
+                      className="text-ink/90 drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]"
+                    >
+                      {sampleGlyph}
+                    </span>
+                  )}
+                </button>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="md:pl-[272px] lg:pl-[320px]">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex-1 min-w-[240px]">
+            <SampleRow trackId={track.id} kind={track.kind} />
+          </div>
           <div className="flex items-center gap-1 shrink-0">
             <Tooltip label="fill all steps on this row">
               <button
@@ -288,62 +381,6 @@ export function TrackRow({ track, index }: Props) {
             </Tooltip>
           </div>
         </div>
-
-        <div className="grid grid-cols-[repeat(8,minmax(32px,1fr))] sm:grid-cols-[repeat(8,minmax(40px,1fr))] gap-1 sm:gap-1.5 lg:gap-2 min-w-0">
-          {track.steps.map((step, i) => {
-            const isCurrent = isLiveCell && currentStep === i;
-            const velocityScale = 0.4 + step.velocity * 0.6;
-            const hasSample = track.sampleId !== null;
-            return (
-              <Tooltip
-                key={i}
-                label={
-                  hasSample
-                    ? `step ${i + 1}${step.active ? ` · on · ${sampleLabel}` : ""}`
-                    : `pick a ${track.kind} sample first`
-                }
-              >
-                <button
-                  type="button"
-                  disabled={!hasSample}
-                  onClick={() => {
-                    if (!hasSample) return;
-                    toggleStep(track.id, i);
-                  }}
-                  aria-pressed={step.active}
-                  aria-label={`${track.kind} step ${i + 1}`}
-                  style={{ opacity: step.active ? velocityScale : 1 }}
-                  className={clsx(
-                    "h-11 lg:h-12 w-full rounded-sm border transition-colors duration-150 ease-in",
-                    "motion-reduce:transition-none",
-                    "flex items-center justify-center",
-                    "font-mono text-[10px] tracking-tight leading-none uppercase",
-                    step.active
-                      ? activeBg
-                      : hasSample
-                        ? "bg-bg-panel-2 border-grid hover:border-ink-muted cursor-pointer"
-                        : "bg-bg-panel-2/70 border-dashed border-grid cursor-not-allowed",
-                    isCurrent &&
-                      "ring-2 ring-neon-cyan ring-offset-2 ring-offset-bg-panel",
-                  )}
-                >
-                  {step.active && sampleGlyph && (
-                    <span
-                      aria-hidden
-                      className="text-ink/90 drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]"
-                    >
-                      {sampleGlyph}
-                    </span>
-                  )}
-                </button>
-              </Tooltip>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="md:pl-[232px] lg:pl-[280px]">
-        <SampleRow trackId={track.id} kind={track.kind} />
       </div>
     </div>
   );

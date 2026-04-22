@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SampleRef, TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
+import { polishSampleName } from "@/lib/sampleNames";
 
 interface Props {
   trackId: string;
@@ -16,15 +17,27 @@ export function SampleRow({ trackId, kind }: Props) {
   const setTrackSample = useBeatsStore((s) => s.setTrackSample);
   const previewTrack = useBeatsStore((s) => s.previewTrack);
   const ensureEngineStarted = useBeatsStore((s) => s.ensureEngineStarted);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     void fetchSamples(kind);
   }, [fetchSamples, kind]);
 
-  const groups = useMemo(
-    () => groupByCategory(kindState.samples),
-    [kindState.samples],
-  );
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return kindState.samples;
+    return kindState.samples.filter((s) => {
+      const polished = polishSampleName(s.name).toLowerCase();
+      const category = (s.category ?? "").toLowerCase();
+      return (
+        polished.includes(needle) ||
+        s.name.toLowerCase().includes(needle) ||
+        category.includes(needle)
+      );
+    });
+  }, [kindState.samples, search]);
+
+  const groups = useMemo(() => groupByCategory(filtered), [filtered]);
 
   if (kindState.status === "loading" || kindState.status === "idle") {
     return (
@@ -68,16 +81,27 @@ export function SampleRow({ trackId, kind }: Props) {
     setTrackSample(trackId, sample.id, sample.version);
   };
 
+  const hasSearch = search.trim().length > 0;
+  const resultCount = filtered.length;
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 flex-wrap">
       <label className="text-[9px] uppercase tracking-[0.2em] text-ink-muted w-14 shrink-0">
         sample
       </label>
+      <input
+        type="search"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={`search ${kind}…`}
+        aria-label={`search ${kind} samples`}
+        className="w-28 sm:w-36 h-8 px-2 bg-bg-panel-2 border border-grid rounded text-ink-dim font-mono text-xs placeholder:text-ink-muted/60 hover:border-ink-muted focus-visible:border-neon-violet focus-visible:outline-none transition-colors duration-200 ease-in motion-reduce:transition-none"
+      />
       <select
         value={currentSampleId ?? ""}
         onChange={(e) => void onChange(e)}
         aria-label={`${kind} sample`}
-        className="flex-1 min-w-0 h-8 px-2 pr-6 bg-bg-panel-2 border border-grid rounded text-ink-dim font-mono text-xs hover:border-ink-muted focus-visible:border-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none appearance-none cursor-pointer"
+        className="flex-1 min-w-[160px] h-8 px-2 pr-6 bg-bg-panel-2 border border-grid rounded text-ink-dim font-mono text-xs hover:border-ink-muted focus-visible:border-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none appearance-none cursor-pointer"
         style={{
           backgroundImage:
             "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' stroke='%23b8a3e8' stroke-width='1.2' fill='none'/></svg>\")",
@@ -86,7 +110,9 @@ export function SampleRow({ trackId, kind }: Props) {
         }}
       >
         <option value="" disabled>
-          — choose a sample —
+          {hasSearch && resultCount === 0
+            ? `no matches for "${search.trim()}"`
+            : "— choose a sample —"}
         </option>
         {groups.map(({ category, samples }) => (
           <SampleGroup
@@ -122,7 +148,7 @@ function SampleGroup({
       <>
         {samples.map((sample) => (
           <option key={sample.id} value={sample.id}>
-            {sample.name}
+            {polishSampleName(sample.name)}
           </option>
         ))}
       </>
@@ -132,7 +158,7 @@ function SampleGroup({
     <optgroup label={category}>
       {samples.map((sample) => (
         <option key={sample.id} value={sample.id}>
-          {stripCategoryPrefix(sample.name, category)}
+          {polishSampleName(stripCategoryPrefix(sample.name, category))}
         </option>
       ))}
     </optgroup>
