@@ -63,7 +63,24 @@ export const createPatternSlice: StateCreator<
     recordCommand(get, set, "toggle step", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       const step = track?.steps[stepIndex];
-      if (step) step.active = !step.active;
+      if (!track || !step) return;
+      const willBeActive = !step.active;
+      step.active = willBeActive;
+      if (willBeActive) {
+        // Snapshot the row's current sample onto the step so a later
+        // sample swap on the row doesn't retroactively change what this
+        // step plays — each step remembers the marker it was placed with.
+        if (track.sampleId && track.sampleVersion != null) {
+          step.sampleId = track.sampleId;
+          step.sampleVersion = track.sampleVersion;
+        }
+      } else {
+        // On deactivate, clear the marker so a subsequent re-click picks
+        // up whatever the row currently points at (avoids stale markers
+        // on empty steps).
+        delete step.sampleId;
+        delete step.sampleVersion;
+      }
     }),
 
   setStepVelocity: (trackId, stepIndex, velocity) =>
@@ -149,7 +166,11 @@ export const createPatternSlice: StateCreator<
   clearAllSteps: () =>
     recordCommand(get, set, "clear all steps", (draft) => {
       for (const track of draft.tracks) {
-        for (const step of track.steps) step.active = false;
+        for (const step of track.steps) {
+          step.active = false;
+          delete step.sampleId;
+          delete step.sampleVersion;
+        }
       }
     }),
 
@@ -161,7 +182,16 @@ export const createPatternSlice: StateCreator<
       (draft) => {
         const track = draft.tracks.find((t) => t.id === trackId);
         if (!track) return;
-        for (const step of track.steps) step.active = active;
+        for (const step of track.steps) {
+          step.active = active;
+          if (active && track.sampleId && track.sampleVersion != null) {
+            step.sampleId = track.sampleId;
+            step.sampleVersion = track.sampleVersion;
+          } else if (!active) {
+            delete step.sampleId;
+            delete step.sampleVersion;
+          }
+        }
       },
     ),
 

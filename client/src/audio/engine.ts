@@ -5,8 +5,10 @@ import type { SamplePool } from "./samplePool";
 import { getOrInitSharedPool } from "./samplePool";
 import {
   createTrackVoice,
-  setVoiceBuffer,
+  ensureSubVoice,
+  setSubVoiceBuffer,
   disposeVoice,
+  pruneSubVoices,
   type TrackVoice,
 } from "./players";
 import {
@@ -103,12 +105,21 @@ class AudioEngine {
     ints.snapshot = snapshot;
 
     // Ensure a voice for every track in the new snapshot, then dispose
-    // voices for tracks that are no longer present. Must happen before
-    // transport fires again so the scheduler can route.
+    // voices for tracks that are no longer present.
     const liveIds = new Set<string>();
     for (const track of snapshot.tracks) {
       this.ensureVoice(track.id, track.kind);
       liveIds.add(track.id);
+      // Prune subvoices whose sampleKey is no longer referenced by any
+      // step or by the track's fallback. Keeps the audio graph tight
+      // after sample-swaps that retired old per-step markers.
+      const voice = ints.voices.get(track.id)!;
+      const keepKeys = new Set<string>();
+      if (track.sampleKey) keepKeys.add(track.sampleKey);
+      for (const step of track.steps) {
+        if (step.sampleKey) keepKeys.add(step.sampleKey);
+      }
+      pruneSubVoices(voice, keepKeys);
     }
     for (const [id, voice] of ints.voices) {
       if (liveIds.has(id)) continue;
@@ -173,8 +184,9 @@ class AudioEngine {
     const buffer = await ints.samplePool.load(sample);
     if (!isStillCurrent()) return;
     const key = ints.samplePool.key(sample);
-    if (voice.currentBufferKey !== key) setVoiceBuffer(voice, buffer, key);
-    if (options?.previewOnReady) this.previewTrack(trackId);
+    const sub = ensureSubVoice(voice, key);
+    if (!sub.bufferLoaded) setSubVoiceBuffer(sub, buffer);
+    if (options?.previewOnReady) this.previewTrack(trackId, 0.9, key);
   }
 
   async play(): Promise<void> {
@@ -187,19 +199,26 @@ class AudioEngine {
    * Fire a single one-shot of the given track's currently-loaded sample.
    * Used for sample auditioning (on selection) and step-toggle previews
    * so the user hears what they're adding without having to press play.
-   * No-op if the track has no loaded buffer.
+   * When `sampleKey` is provided, fires that specific subvoice (the
+   * attach path uses this right after loading a buffer); otherwise picks
+   * the track's current-snapshot sampleKey, then any available subvoice.
    */
-  previewTrack(trackId: string, velocity = 0.9): void {
+  previewTrack(trackId: string, velocity = 0.9, sampleKey?: string): void {
     if (!this.internals) return;
     const voice = this.internals.voices.get(trackId);
-    if (!voice || !voice.player.loaded || voice.currentBufferKey === null) {
-      return;
-    }
+    if (!voice) return;
+    const targetKey =
+      sampleKey ??
+      this.internals.snapshot.tracks.find((t) => t.id === trackId)?.sampleKey ??
+      voice.subVoices.keys().next().value;
+    if (!targetKey) return;
+    const sub = voice.subVoices.get(targetKey);
+    if (!sub || !sub.bufferLoaded || !sub.player.loaded) return;
     try {
       const now = Tone.now();
-      voice.velocityGain.gain.cancelScheduledValues(now);
-      voice.velocityGain.gain.setValueAtTime(velocity, now);
-      voice.player.start(now);
+      sub.velocityGain.gain.cancelScheduledValues(now);
+      sub.velocityGain.gain.setValueAtTime(velocity, now);
+      sub.player.start(now);
     } catch (err) {
       console.warn("[audio] preview failed", err);
     }

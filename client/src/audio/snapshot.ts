@@ -6,6 +6,18 @@ import type {
   TrackKind,
 } from "@beats/shared";
 
+export interface EngineStepSnapshot {
+  active: boolean;
+  velocity: number;
+  /**
+   * Sample this specific step should play. Null means fall back to
+   * `track.sampleKey` — that's the "I haven't been placed since the
+   * sample was picked" or "legacy step" case. The scheduler resolves
+   * `step.sampleKey ?? track.sampleKey` before routing to a subvoice.
+   */
+  sampleKey: string | null;
+}
+
 export interface EngineTrackSnapshot {
   id: string;
   kind: TrackKind;
@@ -13,7 +25,7 @@ export interface EngineTrackSnapshot {
   gain: number;
   muted: boolean;
   soloed: boolean;
-  steps: ReadonlyArray<{ active: boolean; velocity: number }>;
+  steps: ReadonlyArray<EngineStepSnapshot>;
 }
 
 export interface EngineEffectSnapshot {
@@ -54,7 +66,14 @@ function freezeTrack(track: Track): EngineTrackSnapshot {
     gain: track.gain,
     muted: track.muted,
     soloed: track.soloed,
-    steps: track.steps.map((s) => ({ active: s.active, velocity: s.velocity })),
+    steps: track.steps.map((s) => ({
+      active: s.active,
+      velocity: s.velocity,
+      sampleKey:
+        s.sampleId && s.sampleVersion != null
+          ? `${s.sampleId}:${s.sampleVersion}`
+          : null,
+    })),
   };
 }
 

@@ -26,6 +26,36 @@ async function resolveSampleForTrack(
 }
 
 /**
+ * Collect every unique (sampleId, version, kind) referenced by the
+ * pattern — both the track-level default AND each step's own marker
+ * (which may differ after a sample swap). The scheduler needs a subvoice
+ * loaded for every one of these so mixed-sample rows play cleanly on
+ * the first Play.
+ */
+function collectReferencedSamples(
+  pattern: Pattern,
+): Array<{ sampleId: string; version: number; kind: SampleRef["kind"] }> {
+  const seen = new Set<string>();
+  const out: Array<{
+    sampleId: string;
+    version: number;
+    kind: SampleRef["kind"];
+  }> = [];
+  for (const track of pattern.tracks) {
+    const add = (id: string | undefined, v: number | undefined | null) => {
+      if (!id || v == null) return;
+      const key = `${id}:${v}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ sampleId: id, version: v, kind: track.kind });
+    };
+    add(track.sampleId ?? undefined, track.sampleVersion);
+    for (const step of track.steps) add(step.sampleId, step.sampleVersion);
+  }
+  return out;
+}
+
+/**
  * Fetch + decode every referenced sample into the shared pool. Safe to
  * call before the user gesture — Tone's AudioContext is suspended at
  * construction, and decodeAudioData works on suspended contexts. Running
@@ -37,10 +67,10 @@ export async function prewarmPatternSamples(pattern: Pattern): Promise<void> {
     () => Tone.getContext().rawContext as unknown as BaseAudioContext,
   );
 
+  const refs = collectReferencedSamples(pattern);
   await Promise.all(
-    pattern.tracks.map(async (track) => {
-      if (!track.sampleId || track.sampleVersion == null) return;
-      const sample = await resolveSampleForTrack(track.sampleId, track.kind);
+    refs.map(async ({ sampleId, kind }) => {
+      const sample = await resolveSampleForTrack(sampleId, kind);
       if (!sample) return;
       if (pool.has(sample)) return;
       try {
@@ -53,44 +83,72 @@ export async function prewarmPatternSamples(pattern: Pattern): Promise<void> {
 }
 
 /**
- * Loads + attaches samples for every track in `pattern` that has a
- * sampleId assigned. Skips tracks whose `previous` entry already has
- * the same sample (idempotent re-runs are free). Exported so the matrix
- * controller can call it at cell-advance time — otherwise voices keep
- * whatever buffers were attached from the previous cell's pattern.
+ * Loads + attaches every sample referenced anywhere in `pattern` —
+ * track-level defaults and per-step markers alike. Unlike the
+ * pre-multi-sample era, a single track can have several subvoices wired
+ * (one per unique sample on its steps), so this fires an attach for
+ * every (track, sample) pair.
+ *
+ * Exported so the matrix controller can call it at cell-advance time.
  */
 export async function forwardPatternSamples(
   pattern: Pattern,
   previous?: Pattern,
 ): Promise<void> {
   for (const track of pattern.tracks) {
-    if (!track.sampleId || track.sampleVersion == null) continue;
+    const keys = new Set<string>();
+    const samplesToAttach: Array<{ sampleId: string; version: number }> = [];
+    const addKey = (id: string | undefined, v: number | undefined | null) => {
+      if (!id || v == null) return;
+      const key = `${id}:${v}`;
+      if (keys.has(key)) return;
+      keys.add(key);
+      samplesToAttach.push({ sampleId: id, version: v });
+    };
+    addKey(track.sampleId ?? undefined, track.sampleVersion);
+    for (const step of track.steps) addKey(step.sampleId, step.sampleVersion);
+
+    // Short-circuit when the referenced set hasn't changed since last
+    // forward — same-sample re-attachment is a no-op via the pool but
+    // skips the network/state dance entirely.
     const prevTrack = previous?.tracks.find((t) => t.id === track.id);
-    if (
-      prevTrack?.sampleId === track.sampleId &&
-      prevTrack?.sampleVersion === track.sampleVersion
-    ) {
-      continue;
+    if (prevTrack) {
+      const prevKeys = new Set<string>();
+      const addPrev = (
+        id: string | undefined,
+        v: number | undefined | null,
+      ) => {
+        if (id && v != null) prevKeys.add(`${id}:${v}`);
+      };
+      addPrev(prevTrack.sampleId ?? undefined, prevTrack.sampleVersion);
+      for (const step of prevTrack.steps)
+        addPrev(step.sampleId, step.sampleVersion);
+      const unchanged =
+        keys.size === prevKeys.size && [...keys].every((k) => prevKeys.has(k));
+      if (unchanged) continue;
     }
 
-    const sample = await resolveSampleForTrack(track.sampleId, track.kind);
-    if (!sample) continue;
-
-    const requestKey = `${sample.id}:${sample.version}`;
-    latestRequest.set(track.id, requestKey);
-
-    try {
-      await audioEngine.attachSampleIfCurrent(
-        track.id,
-        sample,
-        () => latestRequest.get(track.id) === requestKey,
-      );
-    } catch (err) {
-      console.error(`[audio] failed to attach sample ${sample.id}`, err);
-      const message = err instanceof Error ? err.message : "sample load failed";
-      useBeatsStore
-        .getState()
-        .pushToast("error", `couldn't load ${sample.name}: ${message}`);
+    // Latest-request guard keyed by trackId+sampleKey so multiple
+    // in-flight attaches for the same track don't stomp each other.
+    for (const { sampleId, version } of samplesToAttach) {
+      const requestKey = `${sampleId}:${version}`;
+      latestRequest.set(`${track.id}:${requestKey}`, requestKey);
+      const sample = await resolveSampleForTrack(sampleId, track.kind);
+      if (!sample) continue;
+      try {
+        await audioEngine.attachSampleIfCurrent(
+          track.id,
+          sample,
+          () => latestRequest.get(`${track.id}:${requestKey}`) === requestKey,
+        );
+      } catch (err) {
+        console.error(`[audio] failed to attach sample ${sample.id}`, err);
+        const message =
+          err instanceof Error ? err.message : "sample load failed";
+        useBeatsStore
+          .getState()
+          .pushToast("error", `couldn't load ${sample.name}: ${message}`);
+      }
     }
   }
 }

@@ -1,7 +1,7 @@
 import * as Tone from "tone";
 import type { EnginePatternSnapshot, EngineTrackSnapshot } from "./snapshot";
 import type { TrackVoice } from "./players";
-import { isVoiceLoaded } from "./players";
+import { isSubVoiceLoaded } from "./players";
 import type { EngineSubscribers } from "./subscribers";
 
 const MIN_VELOCITY = 0.001;
@@ -27,14 +27,21 @@ export function createTransport(
       for (const track of snapshot.tracks) {
         if (!shouldTrigger(track, step, snapshot.anySoloed)) continue;
         const voice = getVoice(track.id);
-        if (!voice || !isVoiceLoaded(voice)) continue;
+        if (!voice) continue;
+        // Per-step sample overrides the track's default marker. Steps
+        // without their own sampleKey inherit the row's current sample
+        // (legacy / unplaced behavior).
+        const effectiveKey = track.steps[step]?.sampleKey ?? track.sampleKey;
+        if (!effectiveKey) continue;
+        const sub = voice.subVoices.get(effectiveKey);
+        if (!isSubVoiceLoaded(sub)) continue;
         const velocity = Math.max(
           MIN_VELOCITY,
           track.steps[step]?.velocity ?? 1,
         );
-        voice.velocityGain.gain.cancelScheduledValues(time);
-        voice.velocityGain.gain.setValueAtTime(velocity, time);
-        voice.player.start(time);
+        sub.velocityGain.gain.cancelScheduledValues(time);
+        sub.velocityGain.gain.setValueAtTime(velocity, time);
+        sub.player.start(time);
       }
       // emit outside the audio-critical path; consumers should rAF-coalesce
       subscribers.emit("step", step);
@@ -74,6 +81,8 @@ function shouldTrigger(
   if (!stepData?.active) return false;
   if (track.muted) return false;
   if (anySoloed && !track.soloed) return false;
-  if (track.sampleKey === null) return false;
+  // Sample-availability is now checked in the caller by resolving
+  // step.sampleKey ?? track.sampleKey — a step with its own marker is
+  // valid even if the row's current sample was cleared.
   return true;
 }

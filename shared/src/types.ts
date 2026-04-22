@@ -23,6 +23,15 @@ export interface SampleRef {
 export interface TrackStep {
   active: boolean;
   velocity: number;
+  /**
+   * Per-step sample override snapshotted from `track.sampleId` at toggle
+   * time. Swapping the row's sample mid-composition no longer rewrites
+   * existing active steps — each step remembers the sample that was
+   * selected when it was placed. Absent fields fall back to the track's
+   * current sample (legacy / just-placed behavior).
+   */
+  sampleId?: string;
+  sampleVersion?: number;
 }
 
 export interface Track {
