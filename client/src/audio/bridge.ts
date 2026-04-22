@@ -1,5 +1,7 @@
-import type { Pattern } from "@beats/shared";
+import * as Tone from "tone";
+import type { Pattern, SampleRef } from "@beats/shared";
 import { audioEngine } from "./engine";
+import { getOrInitSharedPool } from "./samplePool";
 import { useBeatsStore } from "@/store/useBeatsStore";
 
 // Module-scoped so both the bridge subscription AND the matrix
@@ -7,6 +9,48 @@ import { useBeatsStore } from "@/store/useBeatsStore";
 // latest-request map, rapid cell advancement could land a buffer from
 // the outgoing cell on top of one already loaded for the incoming cell.
 const latestRequest = new Map<string, string>();
+
+async function resolveSampleForTrack(
+  sampleId: string,
+  kind: SampleRef["kind"],
+): Promise<SampleRef | null> {
+  let sample = useBeatsStore.getState().findSampleById(sampleId);
+  if (!sample) {
+    await useBeatsStore
+      .getState()
+      .fetchSamples(kind)
+      .catch(() => undefined);
+    sample = useBeatsStore.getState().findSampleById(sampleId);
+  }
+  return sample ?? null;
+}
+
+/**
+ * Fetch + decode every referenced sample into the shared pool. Safe to
+ * call before the user gesture — Tone's AudioContext is suspended at
+ * construction, and decodeAudioData works on suspended contexts. Running
+ * this on app load means first Play has zero fetch/decode latency.
+ */
+export async function prewarmPatternSamples(pattern: Pattern): Promise<void> {
+  const pool = getOrInitSharedPool(
+    (sample) => useBeatsStore.getState().resolveSampleUrl(sample),
+    () => Tone.getContext().rawContext as unknown as BaseAudioContext,
+  );
+
+  await Promise.all(
+    pattern.tracks.map(async (track) => {
+      if (!track.sampleId || track.sampleVersion == null) return;
+      const sample = await resolveSampleForTrack(track.sampleId, track.kind);
+      if (!sample) return;
+      if (pool.has(sample)) return;
+      try {
+        await pool.load(sample);
+      } catch (err) {
+        console.warn(`[audio] prewarm failed for ${sample.id}`, err);
+      }
+    }),
+  );
+}
 
 /**
  * Loads + attaches samples for every track in `pattern` that has a
@@ -29,13 +73,7 @@ export async function forwardPatternSamples(
       continue;
     }
 
-    // First attempt a direct lookup; if the slice hasn't loaded this
-    // kind yet, fetch and re-lookup.
-    let sample = useBeatsStore.getState().findSampleById(track.sampleId);
-    if (!sample) {
-      await useBeatsStore.getState().fetchSamples(track.kind);
-      sample = useBeatsStore.getState().findSampleById(track.sampleId);
-    }
+    const sample = await resolveSampleForTrack(track.sampleId, track.kind);
     if (!sample) continue;
 
     const requestKey = `${sample.id}:${sample.version}`;
@@ -59,8 +97,12 @@ export async function forwardPatternSamples(
 
 /**
  * Wires patternSlice → audioEngine. Subscribes to pattern changes and
- * forwards them: graph params flow through setPattern immediately; new
- * sample assignments trigger async load + attach.
+ * forwards them in two phases:
+ *   1. Prewarm — fetch + decode sample buffers into the shared pool.
+ *      Runs always, regardless of engine state, so first Play is instant.
+ *   2. Attach — write the pattern snapshot onto the live graph and wire
+ *      decoded buffers to voices. Requires the engine to have started
+ *      (i.e., user gesture has happened).
  *
  * Samples are looked up in `samplesSlice`, which is populated from the
  * Firestore `samples` collection. If the sample isn't cached yet we fetch
@@ -78,24 +120,19 @@ export function startPatternBridge(): () => void {
   let previousPattern: Pattern | undefined;
   const unsubscribe = useBeatsStore.subscribe((state, prev) => {
     if (state.pattern === prev.pattern) return;
-    // Engine might have been reset (sign-out) — skip until re-armed.
+    void prewarmPatternSamples(state.pattern);
     if (!audioEngine.isStarted()) return;
     const isPlaying = state.transport.isPlaying;
     if (!isPlaying) {
       audioEngine.setPattern(state.pattern);
     }
-    // Sample forwarding always runs so picking a new sample reflects in
-    // the voice buffer immediately (useful for ▸ preview). During play
-    // the controller also re-forwards on each cell boundary, so the
-    // worst case here is a one-cycle-early attachment, which is fine.
     void forwardPatternSamples(state.pattern, previousPattern);
     previousPattern = state.pattern;
   });
 
-  // Prime only if the engine actually started (bridge can be invoked
-  // before the user primes audio; setPattern would throw otherwise).
+  const current = useBeatsStore.getState().pattern;
+  void prewarmPatternSamples(current);
   if (audioEngine.isStarted()) {
-    const current = useBeatsStore.getState().pattern;
     audioEngine.setPattern(current);
     void forwardPatternSamples(current);
     previousPattern = current;

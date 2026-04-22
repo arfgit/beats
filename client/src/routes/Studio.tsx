@@ -36,10 +36,13 @@ export default function StudioRoute() {
   const tabIdRef = useRef<string>(nanoid(8));
 
   useEffect(() => {
-    if (!audioReady) return;
+    // Mount the bridge pre-gesture so sample buffers fetch + decode into
+    // the shared SamplePool on load. Post-gesture the same bridge also
+    // wires pattern/voice state onto the live audio graph. The bridge
+    // checks audioEngine.isStarted() internally to gate each phase.
     const unsubscribe = startPatternBridge();
     return unsubscribe;
-  }, [audioReady]);
+  }, []);
 
   useEffect(() => {
     let lock: MultiTabLock | null = null;

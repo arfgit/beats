@@ -1,6 +1,31 @@
 import type { SampleRef } from "@beats/shared";
 
 /**
+ * Process-wide shared pool. Both the audio engine (post-gesture) and the
+ * pre-gesture prewarm path (see audio/bridge.ts) write into the same
+ * instance so buffers decoded before Play are reused instead of re-fetched.
+ */
+let shared: SamplePool | null = null;
+
+export function getOrInitSharedPool(
+  resolveUrl: (sample: SampleRef) => Promise<string>,
+  ctx: () => BaseAudioContext,
+): SamplePool {
+  if (!shared) shared = new SamplePool(resolveUrl, ctx);
+  return shared;
+}
+
+export function currentSharedPool(): SamplePool | null {
+  return shared;
+}
+
+/** Test hook: wipe the cache and drop the singleton. */
+export function resetSharedPoolForTests(): void {
+  shared?.clear();
+  shared = null;
+}
+
+/**
  * Decode-once AudioBuffer cache. Keyed by `${sampleId}:${version}` so old
  * versions remain resolvable for projects that pinned to them.
  */

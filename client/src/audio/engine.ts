@@ -2,7 +2,8 @@ import * as Tone from "tone";
 import type { Pattern, SampleRef } from "@beats/shared";
 import { TRACK_KINDS } from "@beats/shared";
 import { ensureStarted, setIsRecordingProbe } from "./context";
-import { SamplePool } from "./samplePool";
+import type { SamplePool} from "./samplePool";
+import { getOrInitSharedPool } from "./samplePool";
 import {
   createTrackVoice,
   setVoiceBuffer,
@@ -48,7 +49,9 @@ class AudioEngine {
     if (this.internals) return;
     await ensureStarted();
 
-    const samplePool = new SamplePool(
+    // Adopt the process-wide pool so buffers the bridge decoded before the
+    // user gesture are reused rather than re-fetched on first Play.
+    const samplePool = getOrInitSharedPool(
       resolveSampleUrl,
       () => Tone.getContext().rawContext as unknown as BaseAudioContext,
     );
@@ -168,7 +171,6 @@ class AudioEngine {
       voice.velocityGain.gain.setValueAtTime(velocity, now);
       voice.player.start(now);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[audio] preview failed", err);
     }
   }
