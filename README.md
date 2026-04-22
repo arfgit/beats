@@ -4,6 +4,8 @@ Collaborative neon-synthwave beat sequencer. Updated, ground-up rewrite of [FC-T
 
 **🎛️ Live: https://beats-prod-ant.web.app**
 
+![beats in action](./docs/beats-record.gif)
+
 ---
 
 ## What's new vs. the original beatdriver
