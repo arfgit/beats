@@ -28,6 +28,13 @@ export interface TransportSlice {
      * logic lives in one place).
      */
     isRecordingPlayback: boolean;
+    /**
+     * Set when the AudioContext is suspended and cannot auto-resume — the
+     * UI should surface a "tap to resume" affordance. Cleared on a
+     * successful resumeFromSuspension call (which uses the button click as
+     * a fresh user gesture).
+     */
+    audioSuspended: boolean;
     lastError: string | null;
   };
   ensureEngineStarted: () => Promise<void>;
@@ -37,6 +44,8 @@ export interface TransportSlice {
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<RecordingResult | null>;
   setRecordingPlayback: (active: boolean) => void;
+  setAudioSuspended: (suspended: boolean) => void;
+  resumeFromSuspension: () => Promise<void>;
   /**
    * Fire a one-shot preview of the track's currently-loaded sample so the
    * user hears what they picked / enabled without having to press play.
@@ -86,7 +95,31 @@ export const createTransportSlice: StateCreator<
       isPlaying: false,
       isRecording: false,
       isRecordingPlayback: false,
+      audioSuspended: false,
       lastError: null,
+    },
+
+    setAudioSuspended: (suspended) =>
+      set((s) => ({
+        transport: { ...s.transport, audioSuspended: suspended },
+      })),
+
+    resumeFromSuspension: async () => {
+      // Import lazy to keep transportSlice free of direct Tone.js imports.
+      const Tone = await import("tone");
+      const rawCtx = Tone.getContext().rawContext as AudioContext;
+      try {
+        if (rawCtx.state === "suspended") await rawCtx.resume();
+      } catch (err) {
+         
+        console.warn("[audio] resume failed", err);
+      }
+      if (rawCtx.state === "running") {
+        Tone.getTransport().start();
+        set((s) => ({
+          transport: { ...s.transport, audioSuspended: false, isPlaying: true },
+        }));
+      }
     },
 
     ensureEngineStarted: async () => {

@@ -46,16 +46,45 @@ export function setIsRecordingProbe(probe: IsRecordingProbe): void {
   isRecordingProbe = probe;
 }
 
-function onVisibilityChange(): void {
+/**
+ * Reports to the store whether the AudioContext is currently suspended in
+ * a way that needs a user gesture to recover — e.g., returning to the tab
+ * on Safari/iOS, which holds contexts suspended across visibility swaps.
+ */
+type SuspensionHandler = (suspended: boolean) => void;
+let suspensionHandler: SuspensionHandler = () => undefined;
+
+export function setSuspensionHandler(handler: SuspensionHandler): void {
+  suspensionHandler = handler;
+}
+
+async function onVisibilityChange(): Promise<void> {
   const transport = Tone.getTransport();
+  const rawCtx = Tone.getContext().rawContext as AudioContext;
   if (document.hidden) {
     if (transport.state === "started" && !isRecordingProbe()) {
       transport.pause();
       state.pausedByVisibility = true;
     }
-  } else if (state.pausedByVisibility) {
-    state.pausedByVisibility = false;
+    return;
+  }
+  if (!state.pausedByVisibility) return;
+  state.pausedByVisibility = false;
+  // On most browsers the context auto-resumes with visibility; Safari/iOS
+  // often leaves it suspended until a fresh user gesture. Try resume, then
+  // branch on the actual post-resume state.
+  try {
+    if (rawCtx.state === "suspended") await rawCtx.resume();
+  } catch {
+    // resume can reject on browsers that strictly require a gesture —
+    // handled by the suspended-branch below.
+  }
+  if (rawCtx.state === "running") {
     transport.start();
+    suspensionHandler(false);
+  } else {
+    // Context still suspended — surface "tap to resume" to the UI.
+    suspensionHandler(true);
   }
 }
 
@@ -68,4 +97,5 @@ export function __resetContextForTests(): void {
   }
   state.visibilityHandlerBound = false;
   isRecordingProbe = () => false;
+  suspensionHandler = () => undefined;
 }

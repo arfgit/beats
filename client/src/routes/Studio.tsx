@@ -4,10 +4,12 @@ import { useParams } from "react-router-dom";
 import { nanoid } from "nanoid";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { startPatternBridge } from "@/audio/bridge";
+import { rehydrateFromLocalCache } from "@/lib/localCache";
 import { acquireLock, type MultiTabLock } from "@/lib/multiTabLock";
 import { TransportBar } from "@/features/studio/TransportBar";
 import { TrackRow } from "@/features/studio/TrackRow";
 import { MatrixGrid } from "@/features/studio/MatrixGrid";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { EffectsRack } from "@/features/studio/EffectsRack";
 import { RecorderPanel } from "@/features/studio/RecorderPanel";
 import { SaveShareBar } from "@/features/studio/SaveShareBar";
@@ -23,6 +25,9 @@ export default function StudioRoute() {
   const lastAudioError = useBeatsStore((s) => s.transport.lastError);
   const ensureEngineStarted = useBeatsStore((s) => s.ensureEngineStarted);
   const tracks = useBeatsStore((s) => s.pattern.tracks);
+  const clearAllSteps = useBeatsStore((s) => s.clearAllSteps);
+  const audioSuspended = useBeatsStore((s) => s.transport.audioSuspended);
+  const resumeFromSuspension = useBeatsStore((s) => s.resumeFromSuspension);
   const loadProject = useBeatsStore((s) => s.loadProject);
   const clearProject = useBeatsStore((s) => s.clearProject);
   const setLockOwner = useBeatsStore((s) => s.setLockOwner);
@@ -52,6 +57,10 @@ export default function StudioRoute() {
       lock.onChange(setLockOwner);
       if (authedUid) startCollab(projectId);
     } else {
+      // Restore any unsaved anon work from the previous session before
+      // clearing project-level state. rehydrate is a no-op when no cache
+      // exists, so a fresh visit still starts from defaults.
+      rehydrateFromLocalCache();
       clearProject();
       setLockOwner(true);
       stopCollab();
@@ -88,6 +97,24 @@ export default function StudioRoute() {
       )}
     >
       {authedUid && <ProjectList />}
+      {audioSuspended && (
+        <div
+          role="status"
+          aria-live="assertive"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded border border-neon-sun bg-bg-panel shadow-[var(--glow-sun)]"
+        >
+          <span className="text-ink text-xs uppercase tracking-widest">
+            audio paused while the tab was hidden
+          </span>
+          <button
+            type="button"
+            onClick={() => void resumeFromSuspension()}
+            className="h-8 px-3 border border-neon-sun text-neon-sun rounded text-[11px] uppercase tracking-widest font-mono hover:bg-neon-sun/10 transition-colors duration-200 ease-in motion-reduce:transition-none"
+          >
+            tap to resume
+          </button>
+        </div>
+      )}
       <div className="space-y-6">
         <header className="flex items-end justify-between flex-wrap gap-2">
           <div>
@@ -134,6 +161,20 @@ export default function StudioRoute() {
         <MatrixGrid />
 
         <section className="border border-grid rounded bg-bg-panel/50 p-4 lg:p-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-ink-muted text-xs uppercase tracking-widest">
+              grid
+            </h2>
+            <Tooltip label="deactivate every step on every row of the current cell">
+              <button
+                type="button"
+                onClick={clearAllSteps}
+                className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none"
+              >
+                clear all
+              </button>
+            </Tooltip>
+          </div>
           {tracks.map((track, i) => (
             <TrackRow key={track.id} track={track} index={i} />
           ))}

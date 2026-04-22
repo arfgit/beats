@@ -26,6 +26,14 @@ export interface PatternSlice {
   setMasterGain: (gain: number) => void;
   setEffectParam: (kind: EffectKind, key: string, value: number) => void;
   toggleEffect: (kind: EffectKind) => void;
+  /** Deactivate every step on every track of the current pattern. */
+  clearAllSteps: () => void;
+  /** Activate (or deactivate) every step on a single track. */
+  setAllStepsOnTrack: (trackId: string, active: boolean) => void;
+  /** Reset gain/mute/solo on one track to defaults. */
+  resetTrackMixer: (trackId: string) => void;
+  /** Remove the sample assignment from one track. */
+  clearTrackSample: (trackId: string) => void;
 }
 
 const clamp = (n: number, lo: number, hi: number) =>
@@ -122,5 +130,41 @@ export const createPatternSlice: StateCreator<
     recordCommand(get, set, "toggle effect", (draft) => {
       const effect = draft.effects.find((e) => e.kind === kind);
       if (effect) effect.enabled = !effect.enabled;
+    }),
+
+  clearAllSteps: () =>
+    recordCommand(get, set, "clear all steps", (draft) => {
+      for (const track of draft.tracks) {
+        for (const step of track.steps) step.active = false;
+      }
+    }),
+
+  setAllStepsOnTrack: (trackId, active) =>
+    recordCommand(
+      get,
+      set,
+      active ? "select all steps" : "clear row steps",
+      (draft) => {
+        const track = draft.tracks.find((t) => t.id === trackId);
+        if (!track) return;
+        for (const step of track.steps) step.active = active;
+      },
+    ),
+
+  resetTrackMixer: (trackId) =>
+    recordCommand(get, set, "reset mixer", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      if (!track) return;
+      track.gain = 0.8;
+      track.muted = false;
+      track.soloed = false;
+    }),
+
+  clearTrackSample: (trackId) =>
+    recordCommand(get, set, "clear sample", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      if (!track) return;
+      track.sampleId = null;
+      track.sampleVersion = null;
     }),
 });

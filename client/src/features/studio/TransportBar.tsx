@@ -15,6 +15,8 @@ export function TransportBar() {
   const redo = useBeatsStore((s) => s.redo);
   const canUndo = useBeatsStore((s) => s.history.past.length > 0);
   const canRedo = useBeatsStore((s) => s.history.future.length > 0);
+  const tooltipsEnabled = useBeatsStore((s) => s.ui.tooltipsEnabled);
+  const setTooltipsEnabled = useBeatsStore((s) => s.setTooltipsEnabled);
 
   return (
     <div className="flex items-center flex-wrap gap-4 border-b border-grid pb-4">
@@ -86,6 +88,19 @@ export function TransportBar() {
             aria-label="redo"
           >
             ↷
+          </Button>
+        </Tooltip>
+        <Tooltip
+          label={tooltipsEnabled ? "hide tooltips" : "show tooltips"}
+          force
+        >
+          <Button
+            variant="icon"
+            onClick={() => setTooltipsEnabled(!tooltipsEnabled)}
+            aria-pressed={tooltipsEnabled}
+            aria-label={tooltipsEnabled ? "hide tooltips" : "show tooltips"}
+          >
+            {tooltipsEnabled ? "?" : "?̸"}
           </Button>
         </Tooltip>
       </div>

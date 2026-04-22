@@ -10,7 +10,8 @@ const effectMeta: Record<
 > = {
   chorus: {
     title: "chorus",
-    description: "Widens the stereo image with a slow LFO-modulated delay.",
+    description:
+      "Makes one sound feel like many — blends subtle pitch-shifted copies for a thicker, wider vocal or guitar. Mix: how loud the effect is. Rate: how fast it sweeps. Depth: how dramatic the pitch shift.",
     params: [
       {
         key: "wet",
@@ -43,7 +44,8 @@ const effectMeta: Record<
   },
   phaser: {
     title: "phaser",
-    description: "All-pass filter sweep — classic synthwave whoosh.",
+    description:
+      "Whooshy sweep that moves peaks through the frequency spectrum — great for pads, guitars, or adding motion to a static part. Mix: effect strength. Rate: sweep speed. Range: how wide the sweep goes.",
     params: [
       {
         key: "wet",
@@ -76,7 +78,8 @@ const effectMeta: Record<
   },
   tremolo: {
     title: "tremolo",
-    description: "Amplitude modulation — rhythmic pulse.",
+    description:
+      "Rapidly turns the volume up and down for a pulsing, choppy feel — classic on surf guitars and synth leads. Mix: effect strength. Rate: pulse speed (try matching your BPM). Depth: how far it dips between pulses.",
     params: [
       {
         key: "wet",
@@ -109,7 +112,8 @@ const effectMeta: Record<
   },
   moogFilter: {
     title: "moog",
-    description: "24dB/oct lowpass with resonance. True-bypass via cross-fade.",
+    description:
+      "Cuts high frequencies to make sounds darker and warmer, or sweep the cutoff for classic acid-bass squelch. Cutoff: the frequency above which sound is removed. Reso: emphasis at the cutoff point — high values get whistly and aggressive.",
     params: [
       {
         key: "cutoff",

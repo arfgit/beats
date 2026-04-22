@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { setSuspensionHandler } from "@/audio/context";
+import { saveLocalCache } from "@/lib/localCache";
 import { createAuthSlice, type AuthSlice } from "./authSlice";
 import { createUiSlice, type UiSlice } from "./uiSlice";
 import { createPatternSlice, type PatternSlice } from "./patternSlice";
@@ -33,6 +35,13 @@ export const useBeatsStore = create<BeatsStore>()((...a) => ({
   ...createCollabSlice(...a),
   ...createSamplesSlice(...a),
 }));
+
+// Bridge audio/context visibility events into the transport slice so the
+// UI can render a tap-to-resume affordance when the browser holds the
+// AudioContext suspended after tab-switching back.
+setSuspensionHandler((suspended) =>
+  useBeatsStore.getState().setAudioSuspended(suspended),
+);
 
 // Cross-slice glue: any pattern mutation →
 //   1. mirror into matrix.cells[selectedCellId] so the matrix transport
@@ -78,4 +87,30 @@ useBeatsStore.subscribe((state) => {
   }
 
   if (state.project.current) state.markDirty();
+});
+
+// Local cache mirror: debounce-write matrix + selectedCellId to
+// localStorage so a browser refresh doesn't vaporize active work. The
+// cache is independent of Firestore autosave — it also covers anonymous
+// sessions that never create a Project record. Skipped during
+// `applyingRemote` so a loadProject / rehydrate doesn't bounce its own
+// state back into the cache.
+const CACHE_DEBOUNCE_MS = 300;
+let cacheTimer: ReturnType<typeof setTimeout> | null = null;
+let previousMatrix = useBeatsStore.getState().matrix;
+let previousSelectedCellId = useBeatsStore.getState().selectedCellId;
+useBeatsStore.subscribe((state) => {
+  if (state.project.applyingRemote) return;
+  if (
+    state.matrix === previousMatrix &&
+    state.selectedCellId === previousSelectedCellId
+  ) {
+    return;
+  }
+  previousMatrix = state.matrix;
+  previousSelectedCellId = state.selectedCellId;
+  if (cacheTimer) clearTimeout(cacheTimer);
+  cacheTimer = setTimeout(() => {
+    saveLocalCache(state.matrix, state.selectedCellId);
+  }, CACHE_DEBOUNCE_MS);
 });

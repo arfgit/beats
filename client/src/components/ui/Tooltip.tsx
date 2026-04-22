@@ -41,14 +41,41 @@ export function Tooltip({
   const triggerRef = useRef<HTMLElement | null>(null);
   const enabled = useBeatsStore((s) => s.ui.tooltipsEnabled);
 
+  const [effectivePlacement, setEffectivePlacement] =
+    useState<Placement>(placement);
+
   const show = () => {
     if (!enabled && !force) return;
     const el = triggerRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const gap = 8;
-    const position = (() => {
-      switch (placement) {
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    // Approximate tooltip size — bounded above since we no longer force
+    // nowrap; actual wrapping is handled by the rendered element.
+    const estWidth = Math.min(label.length * 7 + 20, 320);
+    const estHeight = 32;
+
+    // Auto-flip when the preferred placement would overflow.
+    let resolved: Placement = placement;
+    if (placement === "top" && rect.top - gap - estHeight < 0)
+      resolved = "bottom";
+    else if (
+      placement === "bottom" &&
+      rect.bottom + gap + estHeight > viewportHeight
+    )
+      resolved = "top";
+    else if (placement === "left" && rect.left - gap - estWidth < 0)
+      resolved = "right";
+    else if (
+      placement === "right" &&
+      rect.right + gap + estWidth > viewportWidth
+    )
+      resolved = "left";
+
+    const raw = (() => {
+      switch (resolved) {
         case "bottom":
           return { top: rect.bottom + gap, left: rect.left + rect.width / 2 };
         case "left":
@@ -60,7 +87,27 @@ export function Tooltip({
           return { top: rect.top - gap, left: rect.left + rect.width / 2 };
       }
     })();
-    setCoords(position);
+
+    // Clamp horizontal offset so the centered tooltip body stays fully
+    // onscreen. left/right placements anchor to an edge, so only top/bottom
+    // need the centered clamp.
+    const padding = 8;
+    let { top, left } = raw;
+    if (resolved === "top" || resolved === "bottom") {
+      const half = estWidth / 2;
+      const min = padding + half;
+      const max = viewportWidth - padding - half;
+      left = Math.min(Math.max(left, min), max);
+    } else {
+      // For left/right, prevent vertical overflow from the centered anchor.
+      const half = estHeight / 2;
+      const min = padding + half;
+      const max = viewportHeight - padding - half;
+      top = Math.min(Math.max(top, min), max);
+    }
+
+    setEffectivePlacement(resolved);
+    setCoords({ top, left });
     setOpen(true);
   };
   const hide = () => setOpen(false);
@@ -107,11 +154,13 @@ export function Tooltip({
               className={clsx(
                 "fixed z-[9999] pointer-events-none px-2 py-1 rounded",
                 "bg-bg-panel border border-neon-violet text-ink text-xs font-mono",
-                "shadow-[var(--glow-violet)] whitespace-nowrap",
-                placement === "top" && "-translate-x-1/2 -translate-y-full",
-                placement === "bottom" && "-translate-x-1/2",
-                placement === "left" && "-translate-x-full -translate-y-1/2",
-                placement === "right" && "-translate-y-1/2",
+                "shadow-[var(--glow-violet)] max-w-[320px] whitespace-normal leading-snug",
+                effectivePlacement === "top" &&
+                  "-translate-x-1/2 -translate-y-full",
+                effectivePlacement === "bottom" && "-translate-x-1/2",
+                effectivePlacement === "left" &&
+                  "-translate-x-full -translate-y-1/2",
+                effectivePlacement === "right" && "-translate-y-1/2",
               )}
             >
               {label}
