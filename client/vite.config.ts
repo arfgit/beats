@@ -38,20 +38,27 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
-        // All sample audio comes from Firebase Storage now; cache-first
-        // keeps the library available offline after the user has played
-        // something once.
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\//,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "firebase-storage-samples",
-              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 60 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
+        // Clean up caches written by old SW versions so a user upgrading
+        // from an earlier deploy doesn't inherit a 300-entry firebase-
+        // storage cache full of stale audio.
+        cleanupOutdatedCaches: true,
+        // Take control of open tabs as soon as a new SW activates —
+        // removes the "reload twice to see the fix" dance after deploys.
+        clientsClaim: true,
+        skipWaiting: true,
+        // NOTE: we deliberately do NOT intercept Firebase Storage /
+        // `firebasestorage.googleapis.com` requests here. The old
+        // CacheFirst rule threw `FetchEvent.respondWith: no-response`
+        // whenever a fetch errored out (expired media tokens, slow
+        // network, partial outages) because CacheFirst has no built-in
+        // fallback Response — the rejected promise bubbled back as the
+        // opaque no-response error the user saw. Firebase Storage sets
+        // `Cache-Control: public, max-age=2592000` (30 days) via the
+        // seed script, so the browser's native HTTP cache keeps the
+        // samples around for re-hits without SW help. If offline-first
+        // playback becomes a requirement, wrap a NetworkFirst strategy
+        // with an explicit `handlerDidError` fallback that returns a
+        // real Response — not a bare CacheFirst.
       },
       devOptions: { enabled: false },
     }),
