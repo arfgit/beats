@@ -11,6 +11,7 @@ import type {
 import {
   createDefaultMatrix,
   createEmptyMixerCell,
+  createEmptyTrack,
   EFFECT_KINDS,
   MATRIX_CELL_COUNT,
   STEP_COUNT,
@@ -50,6 +51,10 @@ export interface MatrixSlice {
   reorderTracks: (cellId: string, fromIndex: number, toIndex: number) => void;
   /** Change the instrument kind of a specific slot (duplicates allowed). */
   setTrackKind: (cellId: string, trackId: string, kind: TrackKind) => void;
+  /** Append a new track of the given kind to the cell's track list. */
+  addTrack: (cellId: string, kind: TrackKind) => void;
+  /** Remove a track from the cell. No-op when it would leave the cell empty. */
+  removeTrack: (cellId: string, trackId: string) => void;
   /**
    * Replace the matrix with a pre-programmed demo beat that uses all 9
    * cells in a progressive arrangement. Fetches samples for each kind
@@ -162,6 +167,30 @@ export const createMatrixSlice: StateCreator<
           if (fromIndex === toIndex) return;
           const [moved] = cell.pattern.tracks.splice(fromIndex, 1);
           if (moved) cell.pattern.tracks.splice(toIndex, 0, moved);
+        }),
+      }));
+    },
+
+    addTrack: (cellId, kind) => {
+      const track = createEmptyTrack(kind);
+      set((s) => ({
+        matrix: produce(s.matrix, (draft) => {
+          const cell = draft.cells.find((c) => c.id === cellId);
+          if (!cell) return;
+          cell.pattern.tracks.push(track);
+        }),
+      }));
+    },
+
+    removeTrack: (cellId, trackId) => {
+      set((s) => ({
+        matrix: produce(s.matrix, (draft) => {
+          const cell = draft.cells.find((c) => c.id === cellId);
+          if (!cell) return;
+          if (cell.pattern.tracks.length <= 1) return;
+          cell.pattern.tracks = cell.pattern.tracks.filter(
+            (t) => t.id !== trackId,
+          );
         }),
       }));
     },

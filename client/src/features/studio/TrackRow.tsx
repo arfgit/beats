@@ -52,6 +52,8 @@ export function TrackRow({ track, index }: Props) {
   const setAllStepsOnTrack = useBeatsStore((s) => s.setAllStepsOnTrack);
   const resetTrackMixer = useBeatsStore((s) => s.resetTrackMixer);
   const clearTrackSample = useBeatsStore((s) => s.clearTrackSample);
+  const removeTrack = useBeatsStore((s) => s.removeTrack);
+  const trackCount = useBeatsStore((s) => s.pattern.tracks.length);
   const selectedCellId = useBeatsStore((s) => s.selectedCellId);
   const activeCellId = useBeatsStore((s) => s.activeCellId);
   const setTrackKind = useBeatsStore((s) => s.setTrackKind);
@@ -261,6 +263,27 @@ export function TrackRow({ track, index }: Props) {
                 className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
               >
                 ×
+              </button>
+            </Tooltip>
+            <Tooltip
+              label={
+                trackCount <= 1
+                  ? "can't remove the last row"
+                  : "remove this row entirely"
+              }
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  syncPatternIntoMatrix();
+                  removeTrack(selectedCellId, track.id);
+                  loadCellIntoPattern(selectedCellId);
+                }}
+                aria-label={`remove ${track.kind} row`}
+                disabled={trackCount <= 1}
+                className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-red hover:text-neon-red transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
+              >
+                −
               </button>
             </Tooltip>
           </div>

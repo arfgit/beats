@@ -7,6 +7,7 @@ import {
 import type {
   Pattern,
   Track,
+  TrackKind,
   EffectState,
   MixerCell,
   MixerPattern,
@@ -131,6 +132,34 @@ export function createEmptyMixerPattern(): MixerPattern {
         active: false,
         velocity: 1,
       })),
+    })),
+  };
+}
+
+/**
+ * Unique track id for new tracks added after project creation. Uses a
+ * 6-char radix-36 suffix — collisions within a single cell of even ~1000
+ * tracks are astronomically unlikely. Old tracks from pre-multi-track
+ * projects continue to use the legacy `track-${kind}` scheme; both
+ * co-exist since the engine keys voices by id, not by kind.
+ */
+export function generateTrackId(kind: TrackKind): string {
+  const suffix = Math.random().toString(36).slice(2, 8);
+  return `track-${kind}-${suffix}`;
+}
+
+export function createEmptyTrack(kind: TrackKind, id?: string): Track {
+  return {
+    id: id ?? generateTrackId(kind),
+    kind,
+    sampleId: null,
+    sampleVersion: null,
+    gain: 0.8,
+    muted: false,
+    soloed: false,
+    steps: Array.from({ length: STEP_COUNT }, () => ({
+      active: false,
+      velocity: 1,
     })),
   };
 }

@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useParams } from "react-router-dom";
 import { nanoid } from "nanoid";
+import { TRACK_KINDS, type TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { startPatternBridge } from "@/audio/bridge";
 import { rehydrateFromLocalCache } from "@/lib/localCache";
@@ -28,6 +29,11 @@ export default function StudioRoute() {
   const clearAllSteps = useBeatsStore((s) => s.clearAllSteps);
   const audioSuspended = useBeatsStore((s) => s.transport.audioSuspended);
   const resumeFromSuspension = useBeatsStore((s) => s.resumeFromSuspension);
+  const addTrack = useBeatsStore((s) => s.addTrack);
+  const selectedCellId = useBeatsStore((s) => s.selectedCellId);
+  const syncPatternIntoMatrix = useBeatsStore((s) => s.syncPatternIntoMatrix);
+  const loadCellIntoPattern = useBeatsStore((s) => s.loadCellIntoPattern);
+  const [newRowKind, setNewRowKind] = useState<TrackKind>("drums");
   const loadProject = useBeatsStore((s) => s.loadProject);
   const clearProject = useBeatsStore((s) => s.clearProject);
   const setLockOwner = useBeatsStore((s) => s.setLockOwner);
@@ -178,6 +184,38 @@ export default function StudioRoute() {
           {tracks.map((track, i) => (
             <TrackRow key={track.id} track={track} index={i} />
           ))}
+          <div className="flex items-center gap-2 pt-3 mt-2 border-t border-grid/40">
+            <span className="text-[10px] uppercase tracking-widest text-ink-muted">
+              add row
+            </span>
+            <Tooltip label="instrument kind for the new row">
+              <select
+                value={newRowKind}
+                onChange={(e) => setNewRowKind(e.target.value as TrackKind)}
+                aria-label="new row kind"
+                className="h-7 px-2 bg-bg-panel-2 border border-grid rounded text-[10px] uppercase tracking-widest font-mono text-ink-dim cursor-pointer focus-visible:outline-none focus-visible:border-neon-violet"
+              >
+                {TRACK_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+            </Tooltip>
+            <Tooltip label="append a new row of the selected kind — duplicates allowed">
+              <button
+                type="button"
+                onClick={() => {
+                  syncPatternIntoMatrix();
+                  addTrack(selectedCellId, newRowKind);
+                  loadCellIntoPattern(selectedCellId);
+                }}
+                className="h-7 px-3 rounded border border-neon-violet/70 text-neon-violet text-[10px] uppercase tracking-widest font-mono hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none"
+              >
+                + add
+              </button>
+            </Tooltip>
+          </div>
         </section>
 
         <EffectsRack />

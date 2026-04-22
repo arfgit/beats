@@ -1,8 +1,7 @@
 import * as Tone from "tone";
-import type { Pattern, SampleRef } from "@beats/shared";
-import { TRACK_KINDS } from "@beats/shared";
+import type { Pattern, SampleRef, TrackKind } from "@beats/shared";
 import { ensureStarted, setIsRecordingProbe } from "./context";
-import type { SamplePool} from "./samplePool";
+import type { SamplePool } from "./samplePool";
 import { getOrInitSharedPool } from "./samplePool";
 import {
   createTrackVoice,
@@ -66,11 +65,12 @@ class AudioEngine {
     masterGain.connect(Tone.getDestination());
     masterGain.connect(recordTap);
 
+    // Voices are now created lazily on setPattern / attachSample, keyed by
+    // track.id. Pre-allocating one per kind (as earlier phases did) forced
+    // a single voice to serve all same-kind tracks in a cell, which made
+    // two-drums-row layouts impossible. Pruning at setPattern time
+    // disposes voices whose tracks were removed.
     const voices = new Map<string, TrackVoice>();
-    for (const kind of TRACK_KINDS) {
-      const voice = createTrackVoice(`track-${kind}`, kind, busGain);
-      voices.set(voice.id, voice);
-    }
 
     const recorder = createRecorder(this.subscribers);
     setIsRecordingProbe(() => recorder.isRecording());
@@ -102,6 +102,20 @@ class AudioEngine {
     const snapshot = freezeSnapshot(pattern);
     ints.snapshot = snapshot;
 
+    // Ensure a voice for every track in the new snapshot, then dispose
+    // voices for tracks that are no longer present. Must happen before
+    // transport fires again so the scheduler can route.
+    const liveIds = new Set<string>();
+    for (const track of snapshot.tracks) {
+      this.ensureVoice(track.id, track.kind);
+      liveIds.add(track.id);
+    }
+    for (const [id, voice] of ints.voices) {
+      if (liveIds.has(id)) continue;
+      disposeVoice(voice);
+      ints.voices.delete(id);
+    }
+
     // apply non-scheduled state that the snapshot owns
     ints.masterGain.gain.rampTo(snapshot.masterGain, 0.01);
     for (const track of snapshot.tracks) {
@@ -114,6 +128,20 @@ class AudioEngine {
       applyEffectSnapshot(ints.effects, effect);
     }
     ints.transport.setBpm(snapshot.bpm);
+  }
+
+  /**
+   * Lazily create a voice for a track id if one doesn't exist yet. Used by
+   * setPattern and attachSampleIfCurrent so voice allocation tracks the
+   * live pattern instead of being pre-allocated per kind.
+   */
+  private ensureVoice(trackId: string, kind: TrackKind): TrackVoice {
+    const ints = this.requireStarted();
+    const existing = ints.voices.get(trackId);
+    if (existing) return existing;
+    const voice = createTrackVoice(trackId, kind, ints.busGain);
+    ints.voices.set(trackId, voice);
+    return voice;
   }
 
   /** Load and assign a sample to a specific track voice. */
@@ -138,8 +166,10 @@ class AudioEngine {
     options?: { previewOnReady?: boolean },
   ): Promise<void> {
     const ints = this.requireStarted();
-    const voice = ints.voices.get(trackId);
-    if (!voice) throw new Error(`unknown trackId: ${trackId}`);
+    // Create the voice on-demand if the caller is racing a setPattern.
+    // The sample's kind matches the track's kind by construction — the
+    // sample picker scopes its listing to the track's kind.
+    const voice = this.ensureVoice(trackId, sample.kind);
     const buffer = await ints.samplePool.load(sample);
     if (!isStillCurrent()) return;
     const key = ints.samplePool.key(sample);
