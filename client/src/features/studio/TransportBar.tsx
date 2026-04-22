@@ -1,6 +1,7 @@
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { InfoIcon } from "@/components/ui/InfoIcon";
 import { BPM_MAX, BPM_MIN } from "@beats/shared";
 
 export function TransportBar() {
@@ -18,14 +19,22 @@ export function TransportBar() {
   return (
     <div className="flex items-center flex-wrap gap-4 border-b border-grid pb-4">
       <Tooltip label={isPlaying ? "stop (space)" : "play (space)"}>
-        <Button onClick={() => void togglePlay()} variant="primary">
+        <Button
+          onClick={() => void togglePlay()}
+          variant="primary"
+          aria-pressed={isPlaying}
+          aria-label={isPlaying ? "stop playback" : "play pattern"}
+        >
           {isPlaying ? "■ stop" : "▶ play"}
         </Button>
       </Tooltip>
 
-      <Tooltip label="beats per minute (60–200)">
-        <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-ink-muted">
+      <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-ink-muted">
+        <span className="inline-flex items-center gap-1">
           bpm
+          <InfoIcon label="beats per minute — shared across every cell in the matrix. 60-200." />
+        </span>
+        <Tooltip label="beats per minute (60-200)">
           <input
             type="number"
             min={BPM_MIN}
@@ -34,12 +43,15 @@ export function TransportBar() {
             onChange={(e) => setBpm(Number(e.target.value))}
             className="w-16 h-9 px-2 bg-bg-panel border border-grid rounded text-neon-cyan font-mono text-sm text-center focus-visible:outline-none"
           />
-        </label>
-      </Tooltip>
+        </Tooltip>
+      </label>
 
-      <Tooltip label={`master gain ${Math.round(masterGain * 100)}%`}>
-        <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-ink-muted">
+      <label className="flex items-center gap-2 text-xs uppercase tracking-widest text-ink-muted">
+        <span className="inline-flex items-center gap-1">
           master
+          <InfoIcon label="project output volume. double-click the slider to reset." />
+        </span>
+        <Tooltip label={`master gain ${Math.round(masterGain * 100)}%`}>
           <input
             type="range"
             min={0}
@@ -47,11 +59,13 @@ export function TransportBar() {
             step={0.01}
             value={masterGain}
             onChange={(e) => setMasterGain(Number(e.target.value))}
+            onDoubleClick={() => setMasterGain(0.8)}
             aria-label="master gain"
-            className="w-28 h-1 appearance-none bg-grid rounded accent-neon-magenta cursor-pointer"
+            title="double-click to reset"
+            className="w-24 sm:w-40"
           />
-        </label>
-      </Tooltip>
+        </Tooltip>
+      </label>
 
       <div className="flex items-center gap-1 ml-auto">
         <Tooltip label="undo (⌘Z)">

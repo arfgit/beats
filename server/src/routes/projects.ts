@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Response } from "express";
 import { nanoid } from "nanoid";
 import type { Project } from "@beats/shared";
+import { isProjectMatrix } from "@beats/shared";
 import { db } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import {
@@ -95,15 +96,39 @@ router.patch(
           );
         }
 
-        const updates = req.body as Partial<Project>;
+        // Explicit allowlist — never spread req.body into the doc. Zod
+        // already strips unknown keys, but this makes server-managed
+        // fields (id, ownerId, createdAt, revision, collaboratorIds)
+        // impossible to touch via PATCH regardless of schema drift.
+        const body = req.body as {
+          title?: string;
+          pattern?: Project["pattern"]; // ProjectPattern: Pattern | ProjectMatrix
+          isPublic?: boolean;
+        };
         const isOwner = project.ownerId === req.auth!.uid;
-        // Collaborators may only update the pattern; visibility, title,
-        // and collaborator list are owner-only
-        const safeUpdates: Partial<Project> = isOwner
-          ? updates
-          : updates.pattern
-            ? { pattern: updates.pattern }
-            : {};
+
+        const safeUpdates: Partial<Project> = {};
+        if (body.pattern !== undefined) {
+          // Schema-downgrade guard: once a project has been migrated to
+          // v2 (ProjectMatrix), a v1 client cannot overwrite it with a
+          // legacy Pattern. Without this check a stale client could clobber
+          // matrix state with flat pattern state on every save, and the
+          // revision field alone wouldn't catch it (it just tracks
+          // concurrent writes, not schema intent). Tell the client to
+          // refresh rather than silently accepting.
+          if (
+            isProjectMatrix(project.pattern) &&
+            !isProjectMatrix(body.pattern)
+          ) {
+            throw ConflictError(
+              "this project uses the matrix schema — reload to get the latest client",
+            );
+          }
+          safeUpdates.pattern = body.pattern;
+        }
+        if (isOwner && body.title !== undefined) safeUpdates.title = body.title;
+        if (isOwner && body.isPublic !== undefined)
+          safeUpdates.isPublic = body.isPublic;
 
         const updated: Project = {
           ...project,

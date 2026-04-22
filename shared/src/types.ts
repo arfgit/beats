@@ -7,7 +7,10 @@ export type StepIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export interface SampleRef {
   id: string;
   kind: TrackKind;
+  /** Optional subcategory — drums has kick/snare/clap/hihat/etc. */
+  category?: string;
   name: string;
+  /** Object path inside the default Storage bucket. */
   storagePath: string;
   version: number;
   durationMs: number;
@@ -39,8 +42,13 @@ export interface EffectState {
   params: Record<string, number>;
 }
 
+/**
+ * Schema-v1 project body — a single flat pattern with exactly one track
+ * per kind. Kept for backwards-compat reads and for the migration path to
+ * v2. New writes prefer ProjectMatrix (schemaVersion 2).
+ */
 export interface Pattern {
-  schemaVersion: number;
+  schemaVersion: 1 | number;
   bpm: number;
   masterGain: number;
   stepCount: number;
@@ -48,11 +56,48 @@ export interface Pattern {
   effects: EffectState[];
 }
 
+/**
+ * Schema-v2 mixer cell body — the tracks + steps for one cell in the
+ * matrix. BPM / master gain are hoisted to ProjectMatrix (shared across
+ * all cells), and tracks are no longer constrained to one-per-kind —
+ * the user picks any TrackKind per slot, duplicates allowed.
+ */
+export interface MixerPattern {
+  stepCount: number;
+  tracks: Track[];
+}
+
+export interface MixerCell {
+  /** Stable id so engine tracks the cell through matrix reorders. */
+  id: string;
+  enabled: boolean;
+  pattern: MixerPattern;
+  effects: EffectState[];
+}
+
+export interface ProjectMatrix {
+  schemaVersion: 2;
+  sharedBpm: number;
+  masterGain: number;
+  /** Row-major 3×3 order. Length always 9. */
+  cells: MixerCell[];
+}
+
+/**
+ * Union of the two pattern shapes. Discriminated on `schemaVersion`.
+ * Use `isProjectMatrix(pattern)` to narrow.
+ */
+export type ProjectPattern = Pattern | ProjectMatrix;
+
+export function isProjectMatrix(p: ProjectPattern): p is ProjectMatrix {
+  return (p as ProjectMatrix).schemaVersion === 2;
+}
+
 export interface Project {
   id: string;
   ownerId: string;
   title: string;
-  pattern: Pattern;
+  pattern: ProjectPattern;
   isPublic: boolean;
   collaboratorIds: string[];
   updatedAt: number;

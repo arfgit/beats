@@ -24,10 +24,12 @@ service cloud.firestore {
 
     // Projects: owner / collaborator / public.
     match /projects/{projectId} {
-      allow read: if request.auth != null
-                  && (resource.data.ownerId == request.auth.uid
-                      || resource.data.isPublic == true
-                      || request.auth.uid in resource.data.collaboratorIds);
+      // Public projects readable by anyone (gallery browsing while signed-out).
+      // Private projects readable only to owner or named collaborators.
+      allow read: if resource.data.isPublic == true
+                  || (request.auth != null
+                      && (resource.data.ownerId == request.auth.uid
+                          || request.auth.uid in resource.data.collaboratorIds));
       allow write: if false;
 
       // Presence: only project members can see others; each writer can only

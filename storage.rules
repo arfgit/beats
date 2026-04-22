@@ -2,6 +2,16 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    // Built-in sample library is world-readable — bundled audio content
+    // for the sequencer; no auth required to load.
+    match /samples/builtin/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Everything else (user uploads, rendered tracks, user samples,
+    // thumbnails) stays deny-all at the rules layer; access happens
+    // exclusively via server-issued V4 signed URLs.
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -1,7 +1,14 @@
 @import "./tokens.css";
 @import "tailwindcss";
 
-@theme {
+/*
+ * `@theme inline` substitutes the referenced var()s at build time so the
+ * generated utilities contain literal hex values. We prefer it here because
+ * Tailwind v4's opacity modifiers (e.g. `bg-bg-panel-2/40`) emit
+ * `color-mix(in oklab, …)` either way, but the inline form keeps the
+ * final color deterministic and easier to inspect.
+ */
+@theme inline {
   --color-bg-void: var(--bg-void);
   --color-bg-space: var(--bg-space);
   --color-bg-panel: var(--bg-panel);
@@ -50,3 +57,72 @@ body {
 *::-webkit-scrollbar { width: 6px; height: 6px; }
 *::-webkit-scrollbar-thumb { background: var(--grid); border-radius: 3px; }
 *::-webkit-scrollbar-thumb:hover { background: var(--neon-violet); }
+
+/*
+ * Range slider styling — the default browser thumb is a tiny gray capsule
+ * that's hard to grab at low track heights. Custom track + large circular
+ * thumb keeps it consistent across Chrome/Safari/Firefox and easy to hit.
+ */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--grid);
+  border-radius: 999px;
+  cursor: pointer;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--neon-magenta);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 0 1px var(--neon-magenta);
+  cursor: grab;
+  transition: transform 150ms ease-out;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--neon-magenta);
+  border: 2px solid var(--bg-panel);
+  box-shadow: 0 0 0 1px var(--neon-magenta);
+  cursor: grab;
+  transition: transform 150ms ease-out;
+}
+input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.15);
+}
+input[type="range"]:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: var(--grid);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input[type="range"]::-webkit-slider-thumb,
+  input[type="range"]::-moz-range-thumb {
+    transition: none;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover,
+  input[type="range"]:active::-webkit-slider-thumb,
+  input[type="range"]::-moz-range-thumb:hover,
+  input[type="range"]:active::-moz-range-thumb {
+    transform: none;
+  }
+}

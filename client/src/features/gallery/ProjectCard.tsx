@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { Project } from "@beats/shared";
+import { getProjectSummary } from "@beats/shared";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { useBeatsStore } from "@/store/useBeatsStore";
@@ -40,10 +41,7 @@ export function ProjectCard({ project, onForked }: Props) {
         >
           {project.title}
         </h3>
-        <p className="text-ink-muted text-[10px] uppercase tracking-widest">
-          {project.pattern.bpm} bpm · {project.pattern.tracks.length} tracks ·{" "}
-          {project.pattern.effects.filter((e) => e.enabled).length} fx on
-        </p>
+        <ProjectSummaryLine project={project} />
       </Link>
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-ink-muted">
@@ -56,5 +54,22 @@ export function ProjectCard({ project, onForked }: Props) {
         )}
       </div>
     </article>
+  );
+}
+
+function ProjectSummaryLine({ project }: { project: Project }) {
+  const summary = getProjectSummary(project.pattern);
+  const parts = [
+    `${summary.bpm} bpm`,
+    `${summary.trackCount} tracks`,
+    `${summary.effectsEnabled} fx on`,
+  ];
+  if (summary.enabledCellCount !== undefined) {
+    parts.splice(2, 0, `${summary.enabledCellCount}/9 cells`);
+  }
+  return (
+    <p className="text-ink-muted text-[10px] uppercase tracking-widest">
+      {parts.join(" · ")}
+    </p>
   );
 }

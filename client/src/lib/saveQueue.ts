@@ -1,9 +1,14 @@
 import { del, entries, set } from "idb-keyval";
-import type { Pattern } from "@beats/shared";
+import type { ProjectPattern } from "@beats/shared";
 
 export interface QueuedSave {
   projectId: string;
-  pattern: Pattern;
+  /**
+   * Either a v1 Pattern or a v2 ProjectMatrix — server accepts both under
+   * `pattern` (see C0 dual-accept). Stored queue entries survive the client
+   * upgrade window without needing a format change.
+   */
+  pattern: ProjectPattern;
   title?: string;
   isPublic?: boolean;
   queuedAt: number;

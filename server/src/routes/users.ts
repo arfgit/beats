@@ -64,9 +64,27 @@ router.patch(
   validateBody(updateUserBody),
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
+      // Explicit allowlist — never spread req.body into a Firestore write,
+      // even through a Zod-validated alias. Keeps server-managed fields
+      // (id, email, role, createdAt) protected regardless of schema drift.
+      const body = req.body as {
+        displayName?: string;
+        bio?: string;
+        socialLinks?: { kind: string; url: string }[];
+        photoUrl?: string | null;
+        isPublic?: boolean;
+      };
+      const safeUpdate: Record<string, unknown> = {};
+      if (body.displayName !== undefined)
+        safeUpdate.displayName = body.displayName;
+      if (body.bio !== undefined) safeUpdate.bio = body.bio;
+      if (body.socialLinks !== undefined)
+        safeUpdate.socialLinks = body.socialLinks;
+      if (body.photoUrl !== undefined) safeUpdate.photoUrl = body.photoUrl;
+      if (body.isPublic !== undefined) safeUpdate.isPublic = body.isPublic;
+
       const ref = db.collection("users").doc(req.auth!.uid);
-      const updates = req.body as Partial<User>;
-      await ref.update(updates);
+      await ref.update(safeUpdate);
       const snap = await ref.get();
       res.json({ data: snap.data() });
     } catch (err) {

@@ -20,7 +20,6 @@ import { EngineSubscribers } from "./subscribers";
 import { freezeSnapshot, type EnginePatternSnapshot } from "./snapshot";
 
 interface EngineInternals {
-  subscribers: EngineSubscribers;
   samplePool: SamplePool;
   voices: Map<string, TrackVoice>;
   busGain: Tone.Gain;
@@ -34,6 +33,9 @@ interface EngineInternals {
 }
 
 class AudioEngine {
+  // Persistent subscribers instance — survives engine start/reset so React
+  // hooks mounted before ensureStarted() still receive events once it runs.
+  private readonly subscribers = new EngineSubscribers();
   private internals: EngineInternals | null = null;
 
   /**
@@ -46,7 +48,6 @@ class AudioEngine {
     if (this.internals) return;
     await ensureStarted();
 
-    const subscribers = new EngineSubscribers();
     const samplePool = new SamplePool(
       resolveSampleUrl,
       () => Tone.getContext().rawContext as unknown as BaseAudioContext,
@@ -68,18 +69,17 @@ class AudioEngine {
       voices.set(voice.id, voice);
     }
 
-    const recorder = createRecorder(subscribers);
+    const recorder = createRecorder(this.subscribers);
     setIsRecordingProbe(() => recorder.isRecording());
 
     const snapshot = emptySnapshot();
     const transport = createTransport(
       () => this.internals!.snapshot,
       (id) => voices.get(id),
-      subscribers,
+      this.subscribers,
     );
 
     this.internals = {
-      subscribers,
       samplePool,
       voices,
       busGain,
@@ -123,11 +123,16 @@ class AudioEngine {
    * resolves. If the caller's request is stale (a newer sample has been
    * requested for the same track), the decoded buffer is discarded rather
    * than overwriting what the user has since selected.
+   *
+   * If `options.previewOnReady` is set, fires a one-shot as soon as the
+   * buffer lands — this is how the dropdown auditions a sample the user
+   * just picked without racing on a setTimeout.
    */
   async attachSampleIfCurrent(
     trackId: string,
     sample: SampleRef,
     isStillCurrent: () => boolean,
+    options?: { previewOnReady?: boolean },
   ): Promise<void> {
     const ints = this.requireStarted();
     const voice = ints.voices.get(trackId);
@@ -135,8 +140,8 @@ class AudioEngine {
     const buffer = await ints.samplePool.load(sample);
     if (!isStillCurrent()) return;
     const key = ints.samplePool.key(sample);
-    if (voice.currentBufferKey === key) return;
-    setVoiceBuffer(voice, buffer, key);
+    if (voice.currentBufferKey !== key) setVoiceBuffer(voice, buffer, key);
+    if (options?.previewOnReady) this.previewTrack(trackId);
   }
 
   async play(): Promise<void> {
@@ -145,12 +150,35 @@ class AudioEngine {
     ints.transport.start();
   }
 
+  /**
+   * Fire a single one-shot of the given track's currently-loaded sample.
+   * Used for sample auditioning (on selection) and step-toggle previews
+   * so the user hears what they're adding without having to press play.
+   * No-op if the track has no loaded buffer.
+   */
+  previewTrack(trackId: string, velocity = 0.9): void {
+    if (!this.internals) return;
+    const voice = this.internals.voices.get(trackId);
+    if (!voice || !voice.player.loaded || voice.currentBufferKey === null) {
+      return;
+    }
+    try {
+      const now = Tone.now();
+      voice.velocityGain.gain.cancelScheduledValues(now);
+      voice.velocityGain.gain.setValueAtTime(velocity, now);
+      voice.player.start(now);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[audio] preview failed", err);
+    }
+  }
+
   stop(): void {
     if (!this.internals) return;
     this.internals.transport.stop();
   }
 
-  async startRecording(): Promise<void> {
+  async startRecording(maxMs?: number): Promise<void> {
     const ints = this.requireStarted();
     await ints.recorder.start((dest) => {
       ints.recordTap.connect(dest);
@@ -163,10 +191,10 @@ class AudioEngine {
           // already disconnected — ignore
         }
       };
-    });
+    }, maxMs);
   }
 
-  async stopRecording(): Promise<Blob> {
+  async stopRecording(): Promise<import("./recorder").RecordingResult> {
     const ints = this.requireStarted();
     return ints.recorder.stop();
   }
@@ -175,8 +203,9 @@ class AudioEngine {
     event: E,
     cb: Parameters<EngineSubscribers["subscribe"]>[1],
   ): () => void {
-    if (!this.internals) return () => {};
-    return this.internals.subscribers.subscribe(event, cb);
+    // Persistent subscribers — subscribing before ensureStarted() is fine;
+    // events simply don't flow until the engine boots.
+    return this.subscribers.subscribe(event, cb);
   }
 
   reset(): void {
@@ -184,7 +213,8 @@ class AudioEngine {
     const ints = this.internals;
     ints.transport.dispose();
     ints.recorder.dispose();
-    ints.subscribers.clear();
+    // Do NOT clear subscribers — React hooks keep their subscriptions
+    // across a sign-out / engine reset.
     for (const voice of ints.voices.values()) disposeVoice(voice);
     ints.effects.dispose();
     ints.busGain.dispose();

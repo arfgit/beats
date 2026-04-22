@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { adminAuth } from "../services/firebase-admin.js";
+import { logger } from "./logger.js";
 import { UnauthorizedError } from "./errors.js";
 
 export interface AuthedRequest extends Request {
@@ -30,7 +31,8 @@ export async function requireAuth(
       role: (decoded.role as "user" | "admin" | undefined) ?? "user",
     };
     next();
-  } catch {
+  } catch (err) {
+    logger.warn({ err }, "token verification failed");
     next(UnauthorizedError("invalid token"));
   }
 }

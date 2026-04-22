@@ -18,6 +18,7 @@ const effectMeta: Record<
         min: 0,
         max: 1,
         step: 0.01,
+        defaultValue: 0.5,
         display: (v) => `${Math.round(v * 100)}%`,
       },
       {
@@ -26,6 +27,7 @@ const effectMeta: Record<
         min: 0.1,
         max: 8,
         step: 0.1,
+        defaultValue: 1.5,
         display: (v) => `${v.toFixed(1)}hz`,
       },
       {
@@ -34,6 +36,7 @@ const effectMeta: Record<
         min: 0,
         max: 1,
         step: 0.01,
+        defaultValue: 0.5,
         display: (v) => `${Math.round(v * 100)}%`,
       },
     ],
@@ -48,6 +51,7 @@ const effectMeta: Record<
         min: 0,
         max: 1,
         step: 0.01,
+        defaultValue: 0.5,
         display: (v) => `${Math.round(v * 100)}%`,
       },
       {
@@ -56,6 +60,7 @@ const effectMeta: Record<
         min: 0.1,
         max: 5,
         step: 0.1,
+        defaultValue: 0.5,
         display: (v) => `${v.toFixed(1)}hz`,
       },
       {
@@ -64,6 +69,7 @@ const effectMeta: Record<
         min: 1,
         max: 6,
         step: 1,
+        defaultValue: 3,
         display: (v) => v.toFixed(0),
       },
     ],
@@ -78,6 +84,7 @@ const effectMeta: Record<
         min: 0,
         max: 1,
         step: 0.01,
+        defaultValue: 0.5,
         display: (v) => `${Math.round(v * 100)}%`,
       },
       {
@@ -86,6 +93,7 @@ const effectMeta: Record<
         min: 0.5,
         max: 20,
         step: 0.5,
+        defaultValue: 5,
         display: (v) => `${v.toFixed(1)}hz`,
       },
       {
@@ -94,6 +102,7 @@ const effectMeta: Record<
         min: 0,
         max: 1,
         step: 0.01,
+        defaultValue: 0.5,
         display: (v) => `${Math.round(v * 100)}%`,
       },
     ],
@@ -108,6 +117,7 @@ const effectMeta: Record<
         min: 80,
         max: 20000,
         step: 10,
+        defaultValue: 1200,
         display: (v) => `${Math.round(v)}hz`,
       },
       {
@@ -116,6 +126,7 @@ const effectMeta: Record<
         min: 0.1,
         max: 20,
         step: 0.1,
+        defaultValue: 1,
         display: (v) => v.toFixed(1),
       },
     ],
@@ -128,6 +139,7 @@ interface ParamSpec {
   min: number;
   max: number;
   step: number;
+  defaultValue: number;
   display: (v: number) => string;
 }
 
@@ -161,20 +173,35 @@ export function EffectCard({ effect }: Props) {
             aria-label={`${meta.title} ${effect.enabled ? "on" : "off"}`}
             onClick={() => toggleEffect(effect.kind)}
             className={clsx(
-              "h-6 w-11 rounded-full border transition-colors duration-200 ease-in",
-              "motion-reduce:transition-none relative",
+              "relative shrink-0 inline-flex items-center",
+              "h-7 w-14 rounded-full border px-1",
+              "transition-colors duration-200 ease-in motion-reduce:transition-none",
               effect.enabled
-                ? "bg-neon-violet/30 border-neon-violet"
+                ? "bg-neon-violet/25 border-neon-violet"
                 : "bg-bg-panel-2 border-grid",
             )}
           >
+            {/* small OFF / ON text for extra clarity at small sizes */}
             <span
               className={clsx(
-                "absolute top-0.5 h-4 w-4 rounded-full transition-transform duration-200 ease-in",
+                "absolute inset-0 flex items-center justify-between px-2 text-[8px] font-mono uppercase tracking-widest pointer-events-none",
+                effect.enabled ? "text-neon-violet" : "text-ink-muted",
+              )}
+            >
+              <span className={effect.enabled ? "opacity-100" : "opacity-0"}>
+                on
+              </span>
+              <span className={effect.enabled ? "opacity-0" : "opacity-100"}>
+                off
+              </span>
+            </span>
+            <span
+              className={clsx(
+                "relative h-5 w-5 rounded-full transition-transform duration-200 ease-in",
                 "motion-reduce:transition-none",
                 effect.enabled
-                  ? "translate-x-[22px] bg-neon-violet shadow-[var(--glow-violet)]"
-                  : "translate-x-1 bg-ink-muted",
+                  ? "translate-x-[26px] bg-neon-violet"
+                  : "translate-x-0 bg-ink-dim",
               )}
             />
           </button>
@@ -185,10 +212,11 @@ export function EffectCard({ effect }: Props) {
           <Knob
             key={param.key}
             label={param.label}
-            value={effect.params[param.key] ?? param.min}
+            value={effect.params[param.key] ?? param.defaultValue}
             min={param.min}
             max={param.max}
             step={param.step}
+            defaultValue={param.defaultValue}
             onChange={(v) => setEffectParam(effect.kind, param.key, v)}
             valueDisplay={param.display}
           />

@@ -28,6 +28,12 @@ functions/node_modules/
 server/.data/
 server/.cache/
 
+# processed sample staging (output of `npm run process:samples`)
+scripts/.processed-samples/
+# cached clone of the TidalCycles dirt-samples repo — pulled fresh by
+# `npm run import:dirt-samples`, never committed here
+scripts/.dirt-samples-cache/
+
 # logs
 *.log
 npm-debug.log*
@@ -50,6 +56,7 @@ AGENTS.md
 .aider*
 .continue/
 .codeium/
+.serena/
 GEMINI.md
 
 # testing

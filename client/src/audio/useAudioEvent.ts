@@ -15,7 +15,7 @@ export function useAudioEvent<E extends "step" | "rec">(
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
-      if (!audioEngine.isStarted()) return () => {};
+      // Persistent engine subscriber — safe to call before ensureStarted().
       return audioEngine.subscribe(event, (payload) => {
         valueRef.current = payload as EventPayloadMap[E];
         onStoreChange();

@@ -12,6 +12,8 @@ export interface PresenceState {
   uid: string;
   displayName: string;
   color: string;
+  /** Which cell the peer is currently editing. Null before matrix loads. */
+  focusedCellId: string | null;
   focusedTrackId: string | null;
   focusedStep: number | null;
   updatedAt: number;

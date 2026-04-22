@@ -27,9 +27,21 @@ router.post(
           isPublic: false,
           createdAt: Date.now(),
         };
-        await userRef.set(newUser);
-        res.json({ data: newUser });
-        return;
+        // Use create() — atomic insert that fails if the doc already
+        // exists. Two simultaneous first-login requests would otherwise
+        // race (both see !exists, both blind-set).
+        try {
+          await userRef.create(newUser);
+          res.json({ data: newUser });
+          return;
+        } catch (err) {
+          const code = (err as { code?: number | string }).code;
+          // 6 = ALREADY_EXISTS in Firestore gRPC status codes
+          if (code !== 6 && code !== "already-exists") throw err;
+          const raced = await userRef.get();
+          res.json({ data: raced.data() });
+          return;
+        }
       }
 
       res.json({ data: snap.data() });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Button } from "@/components/ui/Button";
@@ -27,8 +27,21 @@ export function SaveShareBar() {
   const pushToast = useBeatsStore((s) => s.pushToast);
   const [draftTitle, setDraftTitle] = useState("untitled beat");
   const [inviteOpen, setInviteOpen] = useState(false);
+  // Local title draft decouples the controlled input from the server-backed
+  // project.title; we only PATCH on blur / Enter to avoid revision churn
+  // on every keystroke.
+  const [titleDraft, setTitleDraft] = useState(project?.title ?? "");
+  useEffect(() => {
+    setTitleDraft(project?.title ?? "");
+  }, [project?.id, project?.title]);
 
   const status = statusLabels[saveStatus] ?? statusLabels.idle!;
+
+  const commitTitle = () => {
+    const next = titleDraft.trim();
+    if (!project || !next || next === project.title) return;
+    void setTitle(next);
+  };
 
   if (!authed) {
     return (
@@ -43,9 +56,13 @@ export function SaveShareBar() {
       {project ? (
         <>
           <input
-            value={project.title}
-            onChange={(e) => void setTitle(e.target.value)}
-            className="h-9 px-2 bg-bg-panel border border-grid rounded text-ink font-mono text-sm focus-visible:outline-none flex-1 min-w-[200px]"
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            className="h-9 px-2 bg-bg-panel border border-grid rounded text-ink font-mono text-sm flex-1 min-w-[160px] sm:min-w-[200px]"
             aria-label="project title"
           />
           <Tooltip
@@ -96,7 +113,7 @@ export function SaveShareBar() {
             value={draftTitle}
             onChange={(e) => setDraftTitle(e.target.value)}
             placeholder="title"
-            className="h-9 px-2 bg-bg-panel border border-grid rounded text-ink font-mono text-sm focus-visible:outline-none flex-1 min-w-[200px]"
+            className="h-9 px-2 bg-bg-panel border border-grid rounded text-ink font-mono text-sm focus-visible:outline-none flex-1 min-w-[160px] sm:min-w-[200px]"
             aria-label="new project title"
           />
           <Button

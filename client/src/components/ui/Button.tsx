@@ -16,20 +16,23 @@ const base =
   "disabled:opacity-40 disabled:cursor-not-allowed " +
   "motion-reduce:transition-none";
 
+// Softer synthwave palette: borders keep the neon accent but hover state
+// shifts to a subtle ink color rather than flooding the button with full
+// neon. Primary-on-hover is the only variant that still colors the bg,
+// and it now uses a soft 15%-alpha tint instead of the full magenta flash.
 const variants: Record<Variant, string> = {
   primary:
     "px-4 h-10 bg-transparent border border-neon-magenta text-neon-magenta " +
-    "hover:bg-neon-magenta hover:text-bg-void " +
-    "shadow-[var(--glow-magenta)]",
+    "hover:bg-neon-magenta/15",
   ghost:
     "px-4 h-10 bg-transparent border border-grid text-ink-dim " +
-    "hover:border-neon-violet hover:text-neon-violet",
+    "hover:border-ink-dim hover:text-ink",
   danger:
-    "px-4 h-10 bg-transparent border border-neon-red text-neon-red " +
-    "hover:bg-neon-red hover:text-bg-void",
+    "px-4 h-10 bg-transparent border border-neon-red/70 text-neon-red " +
+    "hover:bg-neon-red/15",
   icon:
     "h-9 w-9 bg-transparent border border-grid text-ink-dim " +
-    "hover:border-neon-cyan hover:text-neon-cyan",
+    "hover:border-ink-dim hover:text-ink",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

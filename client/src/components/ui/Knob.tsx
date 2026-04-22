@@ -7,6 +7,7 @@ interface KnobProps {
   min: number;
   max: number;
   step?: number;
+  defaultValue?: number;
   onChange: (value: number) => void;
   valueDisplay?: (value: number) => string;
   size?: number;
@@ -14,9 +15,10 @@ interface KnobProps {
 }
 
 /**
- * Accessible rotary knob. Drag vertically to change. Arrow keys nudge.
- * Uses pointer events (no dependency on drag libs) and a native-role slider
- * for screen readers via `role="slider"` + aria-value*.
+ * Accessible rotary knob. Drag vertically to change, arrow keys nudge,
+ * double-click resets to `defaultValue` (DAW convention). Uses pointer
+ * events (no dependency on drag libs) and a native-role slider for screen
+ * readers via `role="slider"` + aria-value*.
  */
 export function Knob({
   label,
@@ -24,15 +26,19 @@ export function Knob({
   min,
   max,
   step = 0.01,
+  defaultValue,
   onChange,
   valueDisplay,
-  size = 52,
+  size = 56,
   className,
 }: KnobProps) {
   const startPos = useRef<{ y: number; value: number } | null>(null);
   const id = useId();
 
-  const clamp = (n: number) => Math.max(min, Math.min(max, n));
+  const clamp = useCallback(
+    (n: number) => Math.max(min, Math.min(max, n)),
+    [min, max],
+  );
 
   const onPointerDown = useCallback(
     (evt: React.PointerEvent) => {
@@ -47,13 +53,14 @@ export function Knob({
       const start = startPos.current;
       if (!start) return;
       const deltaPx = start.y - evt.clientY; // up = increase
-      const pixelsForFullRange = 120;
+      // Shift-drag is 4x finer for precise adjustments
+      const pixelsForFullRange = evt.shiftKey ? 480 : 120;
       const delta = (deltaPx / pixelsForFullRange) * (max - min);
       const next = clamp(start.value + delta);
       const rounded = Math.round(next / step) * step;
       onChange(clamp(rounded));
     },
-    [max, min, onChange, step],
+    [max, min, onChange, step, clamp],
   );
 
   const onPointerUp = useCallback((evt: React.PointerEvent) => {
@@ -78,9 +85,17 @@ export function Knob({
         evt.preventDefault();
         onChange(clamp(value + delta));
       }
+      if (evt.key === "Home" && defaultValue !== undefined) {
+        evt.preventDefault();
+        onChange(clamp(defaultValue));
+      }
     },
-    [onChange, step, value],
+    [onChange, step, value, clamp, defaultValue],
   );
+
+  const onDoubleClick = useCallback(() => {
+    if (defaultValue !== undefined) onChange(clamp(defaultValue));
+  }, [defaultValue, onChange, clamp]);
 
   const pct = (value - min) / (max - min);
   const rotation = -135 + pct * 270; // -135° … +135°
@@ -100,15 +115,27 @@ export function Knob({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onKeyDown={onKeyDown}
+        onDoubleClick={onDoubleClick}
+        title={
+          defaultValue !== undefined
+            ? "drag · shift-drag for precision · double-click to reset"
+            : "drag · shift-drag for precision"
+        }
         style={{ width: size, height: size }}
-        className="relative rounded-full border border-grid bg-bg-panel-2 cursor-ns-resize select-none focus-visible:outline-none"
+        className={clsx(
+          "relative rounded-full border border-grid bg-bg-panel-2",
+          "cursor-ns-resize select-none focus-visible:outline-none",
+          "hover:border-neon-violet transition-colors duration-150",
+          "motion-reduce:transition-none",
+        )}
       >
+        {/* subtle inner ring to look more tactile */}
+        <div className="absolute inset-1 rounded-full border border-grid/50 pointer-events-none" />
         <div
-          className="absolute top-1/2 left-1/2 w-0.5 h-[45%] bg-neon-magenta origin-bottom rounded-full"
+          className="absolute top-1/2 left-1/2 w-[3px] h-[42%] bg-neon-magenta rounded-full"
           style={{
             transform: `translate(-50%, -100%) rotate(${rotation}deg)`,
-            transformOrigin: "bottom center",
-            boxShadow: "var(--glow-magenta)",
+            transformOrigin: "center bottom",
           }}
         />
       </div>

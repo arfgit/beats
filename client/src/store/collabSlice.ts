@@ -11,14 +11,22 @@ import type { BeatsStore } from "./useBeatsStore";
 export interface CollabSlice {
   collab: {
     peers: PresenceState[];
-    focused: { trackId: string | null; step: number | null };
+    focused: {
+      cellId: string | null;
+      trackId: string | null;
+      step: number | null;
+    };
     unsubscribe: (() => void) | null;
     heartbeat: ReturnType<typeof setInterval> | null;
     activeProjectId: string | null;
   };
   startCollab: (projectId: string) => void;
   stopCollab: () => void;
-  focusCell: (trackId: string | null, step: number | null) => void;
+  focusCell: (
+    cellId: string | null,
+    trackId: string | null,
+    step: number | null,
+  ) => void;
 }
 
 const HEARTBEAT_MS = 3000;
@@ -31,7 +39,7 @@ export const createCollabSlice: StateCreator<
 > = (set, get) => ({
   collab: {
     peers: [],
-    focused: { trackId: null, step: null },
+    focused: { cellId: null, trackId: null, step: null },
     unsubscribe: null,
     heartbeat: null,
     activeProjectId: null,
@@ -44,10 +52,15 @@ export const createCollabSlice: StateCreator<
 
     const pushSelf = () => {
       const focused = get().collab.focused;
+      // Fall back to the store's selectedCellId if collab hasn't been
+      // told about a focus explicitly yet — that's always a valid
+      // "where am I" signal for peers even without per-step tracking.
+      const cellId = focused.cellId ?? get().selectedCellId;
       void writePresence(projectId, {
         uid: user.id,
         displayName: user.displayName,
         color: pickPeerColor(user.id),
+        focusedCellId: cellId,
         focusedTrackId: focused.trackId,
         focusedStep: focused.step,
         updatedAt: Date.now(),
@@ -90,7 +103,9 @@ export const createCollabSlice: StateCreator<
     }));
   },
 
-  focusCell: (trackId, step) => {
-    set((s) => ({ collab: { ...s.collab, focused: { trackId, step } } }));
+  focusCell: (cellId, trackId, step) => {
+    set((s) => ({
+      collab: { ...s.collab, focused: { cellId, trackId, step } },
+    }));
   },
 });

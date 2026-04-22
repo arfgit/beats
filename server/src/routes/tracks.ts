@@ -29,13 +29,19 @@ router.post(
         projectId?: string | null;
         contentType: string;
       };
+      const EXT_MAP: Record<string, string> = {
+        "audio/wav": "wav",
+        "audio/mpeg": "mp3",
+        "audio/webm": "webm",
+        "audio/mp4": "mp4",
+      };
+      const extension = EXT_MAP[body.contentType];
+      if (!extension) {
+        return next(
+          ValidationError(`unsupported content type: ${body.contentType}`),
+        );
+      }
       const id = nanoid(14);
-      const extension =
-        body.contentType === "audio/wav"
-          ? "wav"
-          : body.contentType === "audio/mpeg"
-            ? "mp3"
-            : "webm";
       const storagePath = `tracks/${uid}/${id}.${extension}`;
 
       const pending: UploadedTrack & { status: "pending" | "ready" } = {
@@ -50,19 +56,22 @@ router.post(
       };
       await db.collection("uploadedTracks").doc(id).set(pending);
 
+      // extensionHeaders binds Content-Type into the signature so GCS
+      // rejects the PUT if the actual request header doesn't match.
       const [signedUrl] = await storage
         .bucket()
         .file(storagePath)
         .getSignedUrl({
           version: "v4",
           action: "write",
-          expires: Date.now() + 15 * 60 * 1000, // 15 min
+          expires: Date.now() + 15 * 60 * 1000,
           contentType: body.contentType,
+          extensionHeaders: { "content-type": body.contentType },
         });
 
-      res
-        .status(201)
-        .json({ data: { trackId: id, storagePath, uploadUrl: signedUrl } });
+      // Do not leak storagePath — client only needs trackId for finalize,
+      // and uploadUrl for the upload itself.
+      res.status(201).json({ data: { trackId: id, uploadUrl: signedUrl } });
     } catch (err) {
       next(err);
     }

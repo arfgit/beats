@@ -52,12 +52,14 @@ export function AdminTable() {
 
   return (
     <div className="space-y-4">
-      <nav className="flex gap-1" role="tablist">
+      <nav className="flex gap-1" role="tablist" aria-label="admin sections">
         {(["users", "projects"] as const).map((t) => (
           <button
             key={t}
+            id={`admin-tab-${t}`}
             role="tab"
             aria-selected={tab === t}
+            aria-controls={`admin-panel-${t}`}
             onClick={() => setTab(t)}
             className={
               tab === t
@@ -75,7 +77,12 @@ export function AdminTable() {
           loading…
         </p>
       ) : tab === "users" ? (
-        <table className="w-full text-xs font-mono">
+        <table
+          role="tabpanel"
+          id="admin-panel-users"
+          aria-labelledby="admin-tab-users"
+          className="w-full text-xs font-mono"
+        >
           <thead>
             <tr className="text-ink-muted uppercase tracking-widest text-[10px] border-b border-grid">
               <th className="text-left py-2">name</th>
@@ -105,7 +112,12 @@ export function AdminTable() {
           </tbody>
         </table>
       ) : (
-        <table className="w-full text-xs font-mono">
+        <table
+          role="tabpanel"
+          id="admin-panel-projects"
+          aria-labelledby="admin-tab-projects"
+          className="w-full text-xs font-mono"
+        >
           <thead>
             <tr className="text-ink-muted uppercase tracking-widest text-[10px] border-b border-grid">
               <th className="text-left py-2">title</th>

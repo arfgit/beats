@@ -37,23 +37,18 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,wav,mp3,png,ico}"],
-        // keep sample library in the cache so the studio works offline
+        globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+        // All sample audio comes from Firebase Storage now; cache-first
+        // keeps the library available offline after the user has played
+        // something once.
         runtimeCaching: [
           {
-            urlPattern: /\/samples\/builtin\//,
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\//,
             handler: "CacheFirst",
             options: {
-              cacheName: "builtin-samples",
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 60 },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\//,
-            handler: "StaleWhileRevalidate",
-            options: {
-              cacheName: "firebase-storage",
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheName: "firebase-storage-samples",
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],

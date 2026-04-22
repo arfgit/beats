@@ -41,7 +41,13 @@ export function createApp() {
     cors({
       origin: (origin, cb) => {
         const allowed = (
-          process.env.CORS_ORIGINS ?? "http://localhost:5173"
+          process.env.CORS_ORIGINS ??
+          [
+            "http://localhost:5173",
+            "http://localhost:5000",
+            "https://beats-prod-ant.web.app",
+            "https://beats-prod-ant.firebaseapp.com",
+          ].join(",")
         ).split(",");
         if (!origin || allowed.includes(origin)) return cb(null, true);
         cb(new Error("CORS blocked"));

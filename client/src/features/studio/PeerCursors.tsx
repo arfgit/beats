@@ -28,6 +28,11 @@ export function PeerCursors() {
               }}
             />
             <span style={{ color: peer.color }}>{peer.displayName}</span>
+            {peer.focusedCellId !== null && (
+              <span className="text-ink-muted">
+                · cell {peer.focusedCellId}
+              </span>
+            )}
             {peer.focusedTrackId !== null && peer.focusedStep !== null && (
               <span className="text-ink-muted">
                 · {peer.focusedTrackId.replace("track-", "")} step{" "}

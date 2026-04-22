@@ -1,11 +1,48 @@
 import type { StateCreator } from "zustand";
-import type { Pattern, Project } from "@beats/shared";
-import { migratePattern } from "@beats/shared";
+import type { Pattern, Project, ProjectMatrix } from "@beats/shared";
+import {
+  isProjectMatrix,
+  migratePattern,
+  migratePatternToMatrix,
+} from "@beats/shared";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { api, ApiCallError } from "@/lib/api";
 import { dequeueSave, enqueueSave, listPending } from "@/lib/saveQueue";
+import { buildMatrixFromPatternAndMatrix } from "./matrixSlice";
 import type { BeatsStore } from "./useBeatsStore";
+
+/**
+ * Given a project doc straight out of Firestore, produce the pair we
+ * drive the store with:
+ *   - matrix: always v2 ProjectMatrix (auto-migrated from v1 if needed)
+ *   - pattern: the flat legacy pattern for the currently-editable cell
+ *     (first enabled, or cell 0 if none are enabled)
+ */
+function projectToStoreShape(project: Project): {
+  matrix: ProjectMatrix;
+  pattern: Pattern;
+} {
+  const raw = project.pattern;
+  let matrix: ProjectMatrix;
+  if (isProjectMatrix(raw)) {
+    matrix = raw;
+  } else {
+    // v1 legacy — normalize via migratePattern (adds defaults for missing
+    // fields) and wrap as cell 0 of a fresh matrix.
+    matrix = migratePatternToMatrix(migratePattern(raw));
+  }
+  const focus = matrix.cells.find((c) => c.enabled) ?? matrix.cells[0]!;
+  const pattern: Pattern = {
+    schemaVersion: 1,
+    bpm: matrix.sharedBpm,
+    masterGain: matrix.masterGain,
+    stepCount: focus.pattern.stepCount,
+    tracks: focus.pattern.tracks,
+    effects: focus.effects,
+  };
+  return { matrix, pattern };
+}
 
 export type SaveStatus =
   | "idle"
@@ -61,11 +98,18 @@ export const createProjectSlice: StateCreator<
   },
 
   createProject: async (title, isPublic) => {
-    const pattern = get().pattern;
+    // Build a v2 payload from the store's current matrix + pattern —
+    // ensures the brand-new project starts life as ProjectMatrix on the
+    // server (no v1 history to migrate later).
+    const matrix = buildMatrixFromPatternAndMatrix(
+      get().pattern,
+      get().matrix,
+      get().selectedCellId,
+    );
     try {
       const created = await api.post<Project>("/projects", {
         title,
-        pattern,
+        pattern: matrix,
         isPublic,
       });
       set((s) => ({
@@ -76,6 +120,7 @@ export const createProjectSlice: StateCreator<
           saveStatus: "saved",
           lastError: null,
         },
+        matrix,
       }));
       return created;
     } catch (err) {
@@ -106,22 +151,27 @@ export const createProjectSlice: StateCreator<
             return;
           }
           const project = snap.data() as Project;
-          const migrated: Pattern = migratePattern(project.pattern);
+          const { matrix, pattern } = projectToStoreShape(project);
           const isDirty = get().project.dirty;
 
           // Source-aware apply: when a remote snapshot lands while we have no
-          // local edits, we want to mirror the new pattern into the store WITHOUT
-          // the outer subscribe treating it as a user edit and firing markDirty.
+          // local edits, we want to mirror the new pattern/matrix into the
+          // store WITHOUT the outer subscribe treating it as a user edit and
+          // firing markDirty.
           if (!isDirty) {
+            const firstEnabled =
+              matrix.cells.find((c) => c.enabled) ?? matrix.cells[0]!;
             set((s) => ({
               project: {
                 ...s.project,
-                current: { ...project, pattern: migrated },
+                current: { ...project, pattern: matrix },
                 saveStatus: "saved",
                 lastError: null,
                 applyingRemote: true,
               },
-              pattern: migrated,
+              pattern,
+              matrix,
+              selectedCellId: firstEnabled.id,
             }));
             // Flip the flag back on the next tick once the subscribe has fired
             setTimeout(() => {
@@ -131,11 +181,11 @@ export const createProjectSlice: StateCreator<
             }, 0);
           } else {
             // Local edits in flight — update the canonical `current` (revision,
-            // collaborators, etc.) but keep our in-memory pattern.
+            // collaborators, etc.) but keep our in-memory pattern/matrix.
             set((s) => ({
               project: {
                 ...s.project,
-                current: { ...project, pattern: migrated },
+                current: { ...project, pattern: matrix },
                 lastError: null,
               },
             }));
@@ -208,11 +258,19 @@ export const createProjectSlice: StateCreator<
     set((s) => ({ project: { ...s.project, saveStatus: "saving" } }));
     const patternSnapshot = get().pattern;
     const revisionSnapshot = current.revision;
+    // Snapshot the matrix with current pattern edits merged into the
+    // selected cell — this is what we persist. patternSnapshot is retained
+    // so we can detect post-save edits below.
+    const matrixSnapshot = buildMatrixFromPatternAndMatrix(
+      patternSnapshot,
+      get().matrix,
+      get().selectedCellId,
+    );
 
     try {
       const updated = await api.patch<Project>(
         `/projects/${current.id}`,
-        { pattern: patternSnapshot },
+        { pattern: matrixSnapshot },
         { headers: { "If-Match": String(revisionSnapshot) } },
       );
       await dequeueSave(current.id);
@@ -225,6 +283,10 @@ export const createProjectSlice: StateCreator<
           saveStatus: patternChangedDuringSave ? "dirty" : "saved",
           lastError: null,
         },
+        // Keep local matrix in sync with what we just persisted — next save
+        // can diff against this without the pattern-mirror step re-creating
+        // a stale cell.
+        matrix: matrixSnapshot,
       }));
       // If the user kept editing during the save, queue another one.
       if (patternChangedDuringSave) {
@@ -248,7 +310,7 @@ export const createProjectSlice: StateCreator<
       ) {
         await enqueueSave({
           projectId: current.id,
-          pattern: patternSnapshot,
+          pattern: matrixSnapshot,
           queuedAt: Date.now(),
           revisionAtQueue: revisionSnapshot,
         });
@@ -272,15 +334,21 @@ export const createProjectSlice: StateCreator<
     if (!current) return null;
     try {
       const fork = await api.post<Project>(`/projects/${current.id}/fork`);
+      const { matrix: forkMatrix, pattern: forkPattern } =
+        projectToStoreShape(fork);
+      const firstEnabled =
+        forkMatrix.cells.find((c) => c.enabled) ?? forkMatrix.cells[0]!;
       set((s) => ({
         project: {
           ...s.project,
-          current: fork,
+          current: { ...fork, pattern: forkMatrix },
           dirty: false,
           saveStatus: "saved",
           applyingRemote: true,
         },
-        pattern: fork.pattern,
+        pattern: forkPattern,
+        matrix: forkMatrix,
+        selectedCellId: firstEnabled.id,
       }));
       setTimeout(() => {
         set((s) => ({ project: { ...s.project, applyingRemote: false } }));

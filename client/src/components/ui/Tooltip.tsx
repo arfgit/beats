@@ -71,14 +71,29 @@ export function Tooltip({
     triggerRef.current = node;
   };
 
+  const childProps = children.props;
   const wrapped = cloneElement(children, {
     ref: attachRef,
-    "aria-describedby": open ? tooltipId : undefined,
-    onMouseEnter: show,
-    onMouseLeave: hide,
-    onFocus: show,
-    onBlur: hide,
-  } as Record<string, unknown>);
+    "aria-describedby": open ? tooltipId : childProps["aria-describedby"],
+    // Compose rather than clobber — if the consumer passes their own handlers,
+    // call ours alongside theirs.
+    onMouseEnter: () => {
+      show();
+      childProps.onMouseEnter?.();
+    },
+    onMouseLeave: () => {
+      hide();
+      childProps.onMouseLeave?.();
+    },
+    onFocus: () => {
+      show();
+      childProps.onFocus?.();
+    },
+    onBlur: () => {
+      hide();
+      childProps.onBlur?.();
+    },
+  });
 
   return (
     <>

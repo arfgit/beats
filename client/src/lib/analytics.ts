@@ -39,8 +39,13 @@ async function dispatch(name: EventName, props: EventProps): Promise<void> {
       body: JSON.stringify({ name, props, ts: Date.now() }),
       keepalive: true,
     });
-  } catch {
-    // swallow — analytics must never break the app
+  } catch (err) {
+    // Swallow — analytics must never break the app — but surface in dev
+    // so flaky dispatch logic is visible while iterating.
+    if (DEV) {
+      // eslint-disable-next-line no-console
+      console.debug("[analytics] dispatch failed", err);
+    }
   }
 }
 

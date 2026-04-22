@@ -16,7 +16,15 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "emulators": "firebase emulators:start --only auth,firestore,storage,functions"
+    "emulators": "firebase emulators:start --only auth,firestore,storage,functions",
+    "process:samples": "tsx scripts/process-samples.ts",
+    "import:dirt-samples": "tsx scripts/import-dirt-samples.ts",
+    "clear:builtin-samples": "tsx scripts/clear-builtin-samples.ts",
+    "seed:samples": "tsx scripts/seed-samples.ts",
+    "build:client": "npm run build -w shared && npm run build -w client",
+    "deploy:hosting": "npm run build:client && firebase deploy --only hosting",
+    "deploy:rules": "firebase deploy --only firestore:rules,storage:rules",
+    "deploy:all": "npm run build && firebase deploy"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
