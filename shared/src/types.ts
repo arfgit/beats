@@ -62,6 +62,9 @@ export interface Pattern {
   effects: EffectState[];
 }
 
+// MixerCell and below carry an optional user-editable name so users can
+// label cells ("intro", "drop", "outro"). See MixerCell.name below.
+
 /**
  * Schema-v2 mixer cell body — the tracks + steps for one cell in the
  * matrix. BPM / master gain are hoisted to ProjectMatrix (shared across
@@ -76,6 +79,8 @@ export interface MixerPattern {
 export interface MixerCell {
   /** Stable id so engine tracks the cell through matrix reorders. */
   id: string;
+  /** Optional user-editable label — falls back to the 1-based index when absent. */
+  name?: string;
   enabled: boolean;
   pattern: MixerPattern;
   effects: EffectState[];

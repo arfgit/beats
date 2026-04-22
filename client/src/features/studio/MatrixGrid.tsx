@@ -38,6 +38,10 @@ export function MatrixGrid() {
   const generateDemoBeat = useBeatsStore((s) => s.generateDemoBeat);
   const clearAllCellSteps = useBeatsStore((s) => s.clearAllCellSteps);
   const toggleAllCellsEnabled = useBeatsStore((s) => s.toggleAllCellsEnabled);
+  const setCellName = useBeatsStore((s) => s.setCellName);
+  const anyCellEnabled = useBeatsStore((s) =>
+    s.matrix.cells.some((c) => c.enabled),
+  );
   const [seeding, setSeeding] = useState(false);
 
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
@@ -100,13 +104,19 @@ export function MatrixGrid() {
           <p className="text-[10px] uppercase tracking-widest text-ink-muted hidden lg:block">
             drag to reorder · click to edit · dot toggles
           </p>
-          <Tooltip label="flip enabled/disabled on every cell in the matrix">
+          <Tooltip
+            label={
+              anyCellEnabled
+                ? "disable every cell in the matrix"
+                : "enable every cell in the matrix"
+            }
+          >
             <button
               type="button"
               onClick={() => toggleAllCellsEnabled()}
               className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none"
             >
-              toggle all
+              {anyCellEnabled ? "disable all" : "enable all"}
             </button>
           </Tooltip>
           <Tooltip label="deactivate every step on every row in every cell">
@@ -182,10 +192,31 @@ export function MatrixGrid() {
                 isDragOver && "border-neon-sun border-dashed",
               )}
             >
-              <div className="flex items-start justify-between">
-                <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-                  {index + 1}
-                </span>
+              <div className="flex items-start justify-between gap-1">
+                <input
+                  type="text"
+                  defaultValue={cell.name ?? ""}
+                  placeholder={String(index + 1)}
+                  maxLength={24}
+                  aria-label={`cell ${index + 1} name`}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onBlur={(e) => {
+                    const next = e.target.value.trim() || null;
+                    if (next !== (cell.name ?? null)) {
+                      setCellName(cell.id, e.target.value);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") {
+                      e.currentTarget.value = cell.name ?? "";
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="w-0 flex-1 min-w-0 bg-transparent px-0.5 font-mono text-[10px] uppercase tracking-widest text-ink placeholder:text-ink-muted placeholder:normal-case focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-neon-violet rounded-sm"
+                />
                 <Tooltip label={cell.enabled ? "disable cell" : "enable cell"}>
                   <button
                     type="button"

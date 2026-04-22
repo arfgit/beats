@@ -4,6 +4,7 @@ import { TRACK_KINDS } from "@beats/shared";
 import type { Track, TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { Knob } from "@/components/ui/Knob";
 import { polishSampleName } from "@/lib/sampleNames";
 import { useStep } from "./useStep";
 import { SampleRow } from "./SampleRow";
@@ -242,19 +243,22 @@ export function TrackRow({ track, index }: Props) {
               s
             </button>
           </Tooltip>
-          <Tooltip label={`gain ${Math.round(track.gain * 100)}%`}>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={track.gain}
-              onChange={(e) => setTrackGain(track.id, Number(e.target.value))}
-              onDoubleClick={() => setTrackGain(track.id, 0.8)}
-              aria-label={`${track.kind} gain`}
-              title="double-click to reset"
-              className="flex-1 min-w-0"
-            />
+          <Tooltip
+            label={`gain — drag vertically or arrow keys (double-click resets)`}
+          >
+            <div className="shrink-0">
+              <Knob
+                label={`${track.name ?? track.kind} gain`}
+                value={track.gain}
+                min={0}
+                max={1}
+                step={0.01}
+                defaultValue={0.8}
+                onChange={(v) => setTrackGain(track.id, v)}
+                valueDisplay={(v) => `${Math.round(v * 100)}%`}
+                size={36}
+              />
+            </div>
           </Tooltip>
         </div>
 
@@ -362,7 +366,7 @@ export function TrackRow({ track, index }: Props) {
               label={
                 trackCount <= 1
                   ? "can't remove the last row"
-                  : "remove this row entirely"
+                  : "delete this row — destructive"
               }
             >
               <button
@@ -374,9 +378,9 @@ export function TrackRow({ track, index }: Props) {
                 }}
                 aria-label={`remove ${track.kind} row`}
                 disabled={trackCount <= 1}
-                className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-red hover:text-neon-red transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
+                className="h-8 px-2 rounded border border-neon-red/40 text-neon-red/80 text-[10px] font-mono uppercase tracking-widest hover:border-neon-red hover:text-neon-red hover:bg-neon-red/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-neon-red/40 disabled:hover:text-neon-red/80 disabled:hover:bg-transparent"
               >
-                −
+                del row
               </button>
             </Tooltip>
           </div>

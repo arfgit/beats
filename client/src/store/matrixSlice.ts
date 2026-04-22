@@ -59,6 +59,8 @@ export interface MatrixSlice {
   clearAllCellSteps: () => void;
   /** Flip `enabled` on every cell in the matrix. */
   toggleAllCellsEnabled: () => void;
+  /** Rename a cell — empty string clears back to "cell N" default. */
+  setCellName: (cellId: string, name: string) => void;
   /**
    * Replace the matrix with a pre-programmed demo beat that uses all 9
    * cells in a progressive arrangement. Fetches samples for each kind
@@ -215,10 +217,32 @@ export const createMatrixSlice: StateCreator<
       get().loadCellIntoPattern(get().selectedCellId);
     },
 
-    toggleAllCellsEnabled: () => {
+    setCellName: (cellId, name) => {
       set((s) => ({
         matrix: produce(s.matrix, (draft) => {
-          for (const cell of draft.cells) cell.enabled = !cell.enabled;
+          const cell = draft.cells.find((c) => c.id === cellId);
+          if (!cell) return;
+          const trimmed = name.trim();
+          if (trimmed.length === 0) {
+            delete cell.name;
+          } else {
+            cell.name = trimmed.slice(0, 24);
+          }
+        }),
+      }));
+    },
+
+    toggleAllCellsEnabled: () => {
+      // Smart semantics: if any cell is currently enabled, disable all.
+      // Otherwise, enable all. Flipping each independently is confusing
+      // when the matrix starts with cell 0 enabled by default — the
+      // first click would leave the user with "every cell except the
+      // first," which nobody asks for.
+      const anyEnabled = get().matrix.cells.some((c) => c.enabled);
+      const next = !anyEnabled;
+      set((s) => ({
+        matrix: produce(s.matrix, (draft) => {
+          for (const cell of draft.cells) cell.enabled = next;
         }),
       }));
     },
@@ -358,19 +382,25 @@ function buildTrack(
   };
 }
 
-/** Default, fully-disabled effects chain for a demo cell. */
-function demoEffects() {
+/**
+ * Default effect chain for a demo cell. Effects named in `enabledKinds`
+ * ship engaged so a freshly-seeded demo sounds like the composer
+ * intended — previously they were always disabled while the knobs still
+ * showed tweaked values, which confused users who turned the cell on
+ * and heard no effect.
+ */
+function demoEffects(enabledKinds: readonly EffectKind[] = []) {
   return EFFECT_KINDS.map((kind) => ({
     kind,
-    enabled: false,
+    enabled: enabledKinds.includes(kind),
     params:
       kind === "chorus"
-        ? { wet: 0.5, frequency: 1.5, depth: 0.5 }
+        ? { wet: 0.4, frequency: 1.5, depth: 0.5 }
         : kind === "phaser"
-          ? { wet: 0.5, frequency: 0.5, octaves: 3 }
+          ? { wet: 0.35, frequency: 0.5, octaves: 3 }
           : kind === "tremolo"
-            ? { wet: 0.5, frequency: 5, depth: 0.5 }
-            : { wet: 0.5, cutoff: 1200, resonance: 1 },
+            ? { wet: 0.35, frequency: 5, depth: 0.5 }
+            : { wet: 0.5, cutoff: 1800, resonance: 1.2 },
   }));
 }
 
@@ -386,8 +416,14 @@ function pickOrNull(samples: SampleRef[], i = 0): SampleRef | null {
  * instead of matrix plumbing.
  */
 function assembleMatrix(
-  cellDefs: Array<{ id: string; tracks: Track[]; enabled: boolean }>,
+  cellDefs: Array<{
+    id: string;
+    tracks: Track[];
+    enabled: boolean;
+    enabledEffects?: readonly EffectKind[];
+  }>,
   sharedBpm: number,
+  defaultEffects: readonly EffectKind[] = [],
 ): ProjectMatrix {
   return {
     schemaVersion: 2,
@@ -397,7 +433,7 @@ function assembleMatrix(
       id: def.id,
       enabled: def.enabled,
       pattern: { stepCount: STEP_COUNT, tracks: def.tracks },
-      effects: demoEffects(),
+      effects: demoEffects(def.enabledEffects ?? defaultEffects),
     })),
   };
 }
@@ -543,7 +579,16 @@ const neonPulseDemo: DemoComposer = Object.assign(
       },
     ];
 
-    return assembleMatrix(cellDefs, 108);
+    // Signature: chorus on every cell for synthwave shimmer. Breakdown
+    // (cell 4) and vocal moment (cell 7) add phaser for motion.
+    const cellsWithSignature = cellDefs.map((def, i) => ({
+      ...def,
+      enabledEffects:
+        i === 4 || i === 7
+          ? (["chorus", "phaser"] as const)
+          : (["chorus"] as const),
+    }));
+    return assembleMatrix(cellsWithSignature, 108);
   },
   { beatName: "neon pulse" },
 );
@@ -689,7 +734,16 @@ const fourOnFloorDemo: DemoComposer = Object.assign(
       },
     ];
 
-    return assembleMatrix(cellDefs, 124);
+    // Signature: moogFilter for that classic house filter pump. Sweep
+    // cells (2, 3, 5) narrow the cutoff for build tension.
+    const cellsWithSignature = cellDefs.map((def, i) => {
+      const isSweep = i === 2 || i === 3 || i === 5;
+      return {
+        ...def,
+        enabledEffects: isSweep ? (["moogFilter"] as const) : ([] as const),
+      };
+    });
+    return assembleMatrix(cellsWithSignature, 124);
   },
   { beatName: "four on the floor" },
 );
@@ -827,14 +881,160 @@ const lofiTrapDemo: DemoComposer = Object.assign(
       },
     ];
 
-    return assembleMatrix(cellDefs, 80);
+    // Signature: tremolo for that washed, cassette-warbling quality.
+    // Melody cells (4, 5) stack chorus for thicker vocal chops.
+    const cellsWithSignature = cellDefs.map((def, i) => ({
+      ...def,
+      enabledEffects:
+        i === 4 || i === 5
+          ? (["tremolo", "chorus"] as const)
+          : (["tremolo"] as const),
+    }));
+    return assembleMatrix(cellsWithSignature, 80);
   },
   { beatName: "lo-fi trap" },
 );
 
+// ----- Composer #4: Boom-Bap — 90bpm head-nodder with swing ------------
+
+const boomBapDemo: DemoComposer = Object.assign(
+  (byKind: SamplesByKind): ProjectMatrix => {
+    const kick = pickByCategory(byKind.drums, "kick");
+    const snare = pickByCategory(byKind.drums, "snare");
+    const hihat = pickByCategory(byKind.drums, "hihat");
+    const openhat = pickByCategory(byKind.drums, "openhat");
+    const perc = pickByCategory(byKind.drums, "perc");
+    const bassA = pickOrNull(byKind.bass, 0)!;
+    const bassB = pickOrNull(byKind.bass, 3) ?? bassA;
+    const guitarA = pickOrNull(byKind.guitar, 0);
+    const vocalA = pickOrNull(byKind.vocals, 0);
+    const vocalB = pickOrNull(byKind.vocals, 3) ?? vocalA;
+
+    // Classic boom-bap: kick-and-snare on the 1/3 (really 0, 2, 5 in 8-step),
+    // hats on the quarters, bass reinforcing the kick with a walking shape.
+    const kickPattern = [0, 5];
+    const snarePattern = [2, 6];
+    const hatQuarters = [0, 2, 4, 6];
+
+    const cellDefs = [
+      // Cell 0 — Head: sparse drums only
+      {
+        id: "c0",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "drums", hihat, hatQuarters, 0.55),
+          buildTrack("track-vocals", "vocals", null, []),
+        ],
+      },
+      // Cell 1 — Add bass walk
+      {
+        id: "c1",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "bass", bassA, [0, 3, 5, 7], 0.7),
+          buildTrack("track-vocals", "drums", hihat, hatQuarters, 0.55),
+        ],
+      },
+      // Cell 2 — Off-beat hats for swing
+      {
+        id: "c2",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "bass", bassA, [0, 3, 5, 7], 0.7),
+          buildTrack("track-vocals", "drums", hihat, [1, 3, 5, 7], 0.5),
+        ],
+      },
+      // Cell 3 — Vocal chop lands
+      {
+        id: "c3",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "bass", bassA, [0, 3, 5, 7], 0.7),
+          buildTrack("track-vocals", "vocals", vocalA, [0, 4], 0.85),
+        ],
+      },
+      // Cell 4 — Guitar loop over drums
+      {
+        id: "c4",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "guitar", guitarA, [0, 2, 4, 6], 0.75),
+          buildTrack("track-vocals", "drums", hihat, hatQuarters, 0.55),
+        ],
+      },
+      // Cell 5 — Stripped: just kick + perc + vocal fill
+      {
+        id: "c5",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, [0, 4], 0.85),
+          buildTrack("track-bass", "drums", perc, [2, 6], 0.65),
+          buildTrack("track-guitar", "bass", bassB, [0, 4], 0.55),
+          buildTrack("track-vocals", "vocals", vocalB, [1, 3, 5, 7], 0.8),
+        ],
+      },
+      // Cell 6 — Full rhythm with open-hat accents
+      {
+        id: "c6",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "bass", bassA, [0, 3, 5, 7], 0.7),
+          buildTrack("track-vocals", "drums", openhat, [3, 7], 0.7),
+        ],
+      },
+      // Cell 7 — Vocal + guitar layered moment
+      {
+        id: "c7",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, kickPattern, 0.9),
+          buildTrack("track-bass", "drums", snare, snarePattern, 0.85),
+          buildTrack("track-guitar", "guitar", guitarA, [0, 4], 0.7),
+          buildTrack("track-vocals", "vocals", vocalA, [2, 6], 0.85),
+        ],
+      },
+      // Cell 8 — Outro: final snare hit with vocal tag
+      {
+        id: "c8",
+        enabled: true,
+        tracks: [
+          buildTrack("track-drums", "drums", kick, [0], 0.85),
+          buildTrack("track-bass", "drums", snare, [2, 4], 0.9),
+          buildTrack("track-guitar", "bass", bassB, [0], 0.6),
+          buildTrack("track-vocals", "vocals", vocalB, [6], 0.9),
+        ],
+      },
+    ];
+
+    // Signature: chorus on the melodic cells for warmth, subtle moogFilter
+    // throughout for that lo-fi sample-rate quality typical of 90s hip-hop.
+    const cellsWithSignature = cellDefs.map((def, i) => ({
+      ...def,
+      enabledEffects:
+        i === 4 || i === 7
+          ? (["chorus", "moogFilter"] as const)
+          : (["moogFilter"] as const),
+    }));
+    return assembleMatrix(cellsWithSignature, 90);
+  },
+  { beatName: "boom-bap" },
+);
+
 // Rotating list of composers. Each click of the "seed demo" button
 // advances `demoIndex` (module-scoped) so users cycle through all
-// three before landing back on the first.
+// variants before landing back on the first.
 interface DemoComposer {
   (byKind: SamplesByKind): ProjectMatrix;
   beatName: string;
@@ -843,6 +1043,7 @@ const DEMO_COMPOSERS: DemoComposer[] = [
   neonPulseDemo,
   fourOnFloorDemo,
   lofiTrapDemo,
+  boomBapDemo,
 ];
 let demoIndex = 0;
 
