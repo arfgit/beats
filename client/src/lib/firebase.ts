@@ -4,7 +4,10 @@ import {
   connectAuthEmulator,
   GoogleAuthProvider,
 } from "firebase/auth";
-import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  initializeFirestore,
+} from "firebase/firestore";
 import { getStorage, connectStorageEmulator } from "firebase/storage";
 import { env } from "./env";
 
@@ -23,7 +26,17 @@ if (!env.useEmulators && !env.firebase.apiKey) {
 const app = getApps()[0] ?? initializeApp(env.firebase);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Auto-detect long-polling instead of the default WebChannel streaming
+// transport. WebChannel uses XHR with `withCredentials: true`, which some
+// networks + browser combos respond to with a CORS wildcard that the
+// browser then rejects ("Access-Control-Allow-Origin: * is not allowed
+// when credentials mode is include"). Long-polling falls back to simple
+// XHR without the credential flag and sidesteps the wildcard issue.
+// `auto` only kicks in if WebChannel fails, so performance is unaffected
+// for users whose networks are fine.
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+});
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
