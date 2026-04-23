@@ -55,16 +55,26 @@ export function SaveShareBar() {
     <div className="border border-grid rounded p-3 bg-bg-panel/60 flex flex-wrap items-center gap-3">
       {project ? (
         <>
-          <input
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            }}
-            className="h-9 px-2 bg-bg-panel border border-grid rounded text-ink font-mono text-sm flex-1 min-w-[160px] sm:min-w-[200px]"
-            aria-label="project title"
-          />
+          <label className="relative flex-1 min-w-[160px] sm:min-w-[200px]">
+            <span className="sr-only">project title</span>
+            <input
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              className="w-full h-9 pl-2 pr-8 bg-bg-panel border border-grid rounded text-ink font-mono text-sm hover:border-ink-muted focus-visible:outline-none focus-visible:border-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none"
+              aria-label="project title"
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted text-xs"
+              title="editable"
+            >
+              ✎
+            </span>
+          </label>
           <Tooltip
             label={project.isPublic ? "make private" : "publish to gallery"}
           >

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { TRACK_KINDS } from "@beats/shared";
-import type { Track, TrackKind } from "@beats/shared";
+import type { SampleRef, Track, TrackKind, TrackStep } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Knob } from "@/components/ui/Knob";
@@ -268,48 +268,20 @@ export function TrackRow({ track, index }: Props) {
             const velocityScale = 0.4 + step.velocity * 0.6;
             const hasSample = track.sampleId !== null;
             return (
-              <Tooltip
+              <PerStepCell
                 key={i}
-                label={
-                  hasSample
-                    ? `step ${i + 1}${step.active ? ` · on · ${sampleLabel}` : ""}`
-                    : `pick a ${track.kind} sample first`
-                }
-              >
-                <button
-                  type="button"
-                  disabled={!hasSample}
-                  onClick={() => {
-                    if (!hasSample) return;
-                    toggleStep(track.id, i);
-                  }}
-                  aria-pressed={step.active}
-                  aria-label={`${track.kind} step ${i + 1}`}
-                  style={{ opacity: step.active ? velocityScale : 1 }}
-                  className={clsx(
-                    "h-11 lg:h-12 w-full rounded-sm border transition-colors duration-150 ease-in",
-                    "motion-reduce:transition-none",
-                    "flex items-center justify-center",
-                    "font-mono text-[10px] tracking-tight leading-none uppercase",
-                    step.active
-                      ? activeBg
-                      : hasSample
-                        ? "bg-bg-panel-2 border-grid hover:border-ink-muted cursor-pointer"
-                        : "bg-bg-panel-2/70 border-dashed border-grid cursor-not-allowed",
-                    isCurrent &&
-                      "ring-2 ring-neon-cyan ring-offset-2 ring-offset-bg-panel",
-                  )}
-                >
-                  {step.active && sampleGlyph && (
-                    <span
-                      aria-hidden
-                      className="text-ink/90 drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]"
-                    >
-                      {sampleGlyph}
-                    </span>
-                  )}
-                </button>
-              </Tooltip>
+                step={step}
+                stepIndex={i}
+                track={track}
+                isCurrent={isCurrent}
+                hasSample={hasSample}
+                velocityScale={velocityScale}
+                activeBg={activeBg}
+                fallbackGlyph={sampleGlyph}
+                fallbackLabel={sampleLabel}
+                onToggle={() => toggleStep(track.id, i)}
+                findSampleById={findSampleById}
+              />
             );
           })}
         </div>
@@ -409,4 +381,90 @@ function makeSampleGlyph(name: string): string {
   const digits = digitMatch ? digitMatch[1] : "";
   const glyph = (initials + digits).toUpperCase();
   return glyph.slice(0, 3);
+}
+
+/**
+ * Per-step cell button. Resolves its own sample label + glyph from the
+ * step's pinned sampleId first, falling back to the track's current
+ * sample only when the step has no pin (i.e. was never activated, or
+ * was toggled off and on before a sample was chosen). This is what
+ * makes a sample swap on the row leave already-placed steps visually
+ * and audibly tied to their original sample.
+ */
+function PerStepCell({
+  step,
+  stepIndex,
+  track,
+  isCurrent,
+  hasSample,
+  velocityScale,
+  activeBg,
+  fallbackGlyph,
+  fallbackLabel,
+  onToggle,
+  findSampleById,
+}: {
+  step: TrackStep;
+  stepIndex: number;
+  track: Track;
+  isCurrent: boolean;
+  hasSample: boolean;
+  velocityScale: number;
+  activeBg: string;
+  fallbackGlyph: string;
+  fallbackLabel: string;
+  onToggle: () => void;
+  findSampleById: (id: string) => SampleRef | undefined;
+}) {
+  // Step-pinned sample > track's current. When the user swaps the row's
+  // sample mid-composition, existing steps keep their own glyph + label
+  // because they remember what was loaded when they were placed.
+  const pinnedSample =
+    step.active && step.sampleId ? findSampleById(step.sampleId) : null;
+  const pinnedName = pinnedSample ? polishSampleName(pinnedSample.name) : null;
+  const stepGlyph = pinnedName ? makeSampleGlyph(pinnedName) : fallbackGlyph;
+  const stepLabel = pinnedName ?? fallbackLabel;
+  return (
+    <Tooltip
+      label={
+        hasSample
+          ? `step ${stepIndex + 1}${step.active ? ` · on · ${stepLabel}` : ""}`
+          : `pick a ${track.kind} sample first`
+      }
+    >
+      <button
+        type="button"
+        disabled={!hasSample}
+        onClick={() => {
+          if (!hasSample) return;
+          onToggle();
+        }}
+        aria-pressed={step.active}
+        aria-label={`${track.kind} step ${stepIndex + 1}`}
+        style={{ opacity: step.active ? velocityScale : 1 }}
+        className={clsx(
+          "h-11 lg:h-12 w-full rounded-sm border transition-colors duration-150 ease-in",
+          "motion-reduce:transition-none",
+          "flex items-center justify-center",
+          "font-mono text-[10px] tracking-tight leading-none uppercase",
+          step.active
+            ? activeBg
+            : hasSample
+              ? "bg-bg-panel-2 border-grid hover:border-ink-muted cursor-pointer"
+              : "bg-bg-panel-2/70 border-dashed border-grid cursor-not-allowed",
+          isCurrent &&
+            "ring-2 ring-neon-cyan ring-offset-2 ring-offset-bg-panel",
+        )}
+      >
+        {step.active && stepGlyph && (
+          <span
+            aria-hidden
+            className="text-ink/90 drop-shadow-[0_0_2px_rgba(0,0,0,0.6)]"
+          >
+            {stepGlyph}
+          </span>
+        )}
+      </button>
+    </Tooltip>
+  );
 }

@@ -12,6 +12,12 @@ import {
 const trackStepSchema = z.object({
   active: z.boolean(),
   velocity: z.number().min(0).max(1),
+  // Per-step sample override (captured at toggle-on time so the grid
+  // glyph + playback stays stable when the row's sample dropdown
+  // changes). Optional + nullable for backwards compat with legacy
+  // docs that never had these fields.
+  sampleId: z.string().nullable().optional(),
+  sampleVersion: z.number().int().nullable().optional(),
 });
 
 const trackSchema = z.object({

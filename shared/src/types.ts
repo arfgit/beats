@@ -30,8 +30,8 @@ export interface TrackStep {
    * selected when it was placed. Absent fields fall back to the track's
    * current sample (legacy / just-placed behavior).
    */
-  sampleId?: string;
-  sampleVersion?: number;
+  sampleId?: string | null;
+  sampleVersion?: number | null;
 }
 
 export interface Track {
