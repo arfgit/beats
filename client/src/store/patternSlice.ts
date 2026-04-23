@@ -210,5 +210,14 @@ export const createPatternSlice: StateCreator<
       if (!track) return;
       track.sampleId = null;
       track.sampleVersion = null;
+      // Deactivate all steps and strip their pinned samples so the row is
+      // fully blank — leaving active steps with no track sample leaves them
+      // unclickable (hasSample=false) but still visually lit, which is
+      // confusing. A full clear matches what the user expects.
+      for (const step of track.steps) {
+        step.active = false;
+        delete step.sampleId;
+        delete step.sampleVersion;
+      }
     }),
 });

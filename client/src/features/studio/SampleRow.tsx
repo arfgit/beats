@@ -15,7 +15,6 @@ export function SampleRow({ trackId, kind }: Props) {
     (s) => s.pattern.tracks.find((t) => t.id === trackId)?.sampleId ?? null,
   );
   const setTrackSample = useBeatsStore((s) => s.setTrackSample);
-  const previewTrack = useBeatsStore((s) => s.previewTrack);
   const ensureEngineStarted = useBeatsStore((s) => s.ensureEngineStarted);
   const [search, setSearch] = useState("");
 
@@ -95,7 +94,7 @@ export function SampleRow({ trackId, kind }: Props) {
         onChange={(e) => setSearch(e.target.value)}
         placeholder={`search ${kind}…`}
         aria-label={`search ${kind} samples`}
-        className="w-28 sm:w-36 h-8 px-2 bg-bg-panel-2 border border-grid rounded text-ink-dim font-mono text-xs placeholder:text-ink-muted/60 hover:border-ink-muted focus-visible:border-neon-violet focus-visible:outline-none transition-colors duration-200 ease-in motion-reduce:transition-none"
+        className="w-24 sm:w-28 h-8 px-2 bg-bg-panel-2 border border-grid rounded text-ink-dim font-mono text-xs placeholder:text-ink-muted/60 hover:border-ink-muted focus-visible:border-neon-violet focus-visible:outline-none transition-colors duration-200 ease-in motion-reduce:transition-none"
       />
       <select
         value={currentSampleId ?? ""}
@@ -122,16 +121,6 @@ export function SampleRow({ trackId, kind }: Props) {
           />
         ))}
       </select>
-      <button
-        type="button"
-        onClick={() => previewTrack(trackId)}
-        disabled={!currentSampleId}
-        aria-label="preview current sample"
-        title="preview"
-        className="h-8 w-8 shrink-0 rounded border border-grid text-ink-muted hover:border-ink-dim hover:text-ink transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        ▸
-      </button>
     </div>
   );
 }

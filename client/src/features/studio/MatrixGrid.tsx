@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import type { MixerCell, TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
@@ -43,6 +44,7 @@ export function MatrixGrid() {
     s.matrix.cells.some((c) => c.enabled),
   );
   const [seeding, setSeeding] = useState(false);
+  const [showSeedModal, setShowSeedModal] = useState(false);
 
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -131,7 +133,17 @@ export function MatrixGrid() {
           <Tooltip label="overwrite the matrix with a pre-programmed 9-cell beat">
             <button
               type="button"
-              onClick={async () => {
+              onClick={() => setShowSeedModal(true)}
+              disabled={seeding}
+              className="h-7 px-2 rounded border border-neon-violet/70 text-neon-violet text-[10px] uppercase tracking-widest font-mono hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-50 disabled:cursor-wait"
+            >
+              {seeding ? "seeding…" : "seed demo ✨"}
+            </button>
+          </Tooltip>
+          {showSeedModal && (
+            <SeedConfirmModal
+              onConfirm={async () => {
+                setShowSeedModal(false);
                 setSeeding(true);
                 try {
                   await generateDemoBeat();
@@ -139,12 +151,9 @@ export function MatrixGrid() {
                   setSeeding(false);
                 }
               }}
-              disabled={seeding}
-              className="h-7 px-2 rounded border border-neon-violet/70 text-neon-violet text-[10px] uppercase tracking-widest font-mono hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-50 disabled:cursor-wait"
-            >
-              {seeding ? "seeding…" : "seed demo ✨"}
-            </button>
-          </Tooltip>
+              onCancel={() => setShowSeedModal(false)}
+            />
+          )}
         </div>
       </header>
       <div className="grid grid-cols-3 gap-2">
@@ -177,7 +186,7 @@ export function MatrixGrid() {
                 }
               }}
               className={clsx(
-                "relative cursor-pointer select-none rounded border p-2 h-28 lg:h-32",
+                "relative cursor-grab active:cursor-grabbing select-none rounded border p-2 h-28 lg:h-32",
                 "flex flex-col",
                 "transition-[border-color,background-color,box-shadow] duration-200 ease-in",
                 "motion-reduce:transition-none",
@@ -193,6 +202,13 @@ export function MatrixGrid() {
               )}
             >
               <div className="flex items-start justify-between gap-1">
+                {/* Drag handle — always visible so the affordance is clear */}
+                <span
+                  aria-hidden
+                  className="text-[8px] text-ink-muted/40 font-mono leading-none pt-0.5 shrink-0 select-none"
+                >
+                  ⠿
+                </span>
                 <input
                   type="text"
                   defaultValue={cell.name ?? ""}
@@ -270,6 +286,77 @@ export function MatrixGrid() {
  * click in to edit — no guessing which cell has the kick pattern vs. the
  * bass line.
  */
+/**
+ * Confirmation modal for "seed demo". Uses the native <dialog> element so
+ * focus is trapped inside the modal automatically and the browser handles
+ * ESC → cancel without any custom key-listener. createPortal hoists it above
+ * the matrix stacking context so it's never clipped.
+ */
+function SeedConfirmModal({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    el.showModal();
+    return () => {
+      if (el.open) el.close();
+    };
+  }, []);
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
+      aria-labelledby={titleId}
+      className={clsx(
+        "fixed m-auto rounded-lg border border-grid bg-bg-panel p-6 shadow-xl shadow-black/60",
+        "w-full max-w-sm",
+        "backdrop:bg-bg-void/75 backdrop:backdrop-blur-sm",
+        "focus-visible:outline-none",
+      )}
+    >
+      <h3
+        id={titleId}
+        className="mb-1 font-mono text-sm uppercase tracking-widest text-ink"
+      >
+        overwrite matrix?
+      </h3>
+      <p className="mb-5 text-[11px] text-ink-muted">
+        All 9 cells will be replaced with a pre-programmed demo beat. This
+        cannot be undone.
+      </p>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-8 px-3 rounded border border-grid font-mono text-[10px] uppercase tracking-widest text-ink-muted hover:border-ink-dim hover:text-ink transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet"
+        >
+          cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="h-8 px-3 rounded border border-neon-violet/70 font-mono text-[10px] uppercase tracking-widest text-neon-violet hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet"
+        >
+          overwrite
+        </button>
+      </div>
+    </dialog>,
+    document.body,
+  );
+}
+
 function CellPreview({ cell }: { cell: MixerCell }) {
   const stepCount = cell.pattern.stepCount;
   return (

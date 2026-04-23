@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import { produce } from "immer";
 import type {
+  EffectKind,
   MixerCell,
   Pattern,
   ProjectMatrix,
@@ -375,10 +376,18 @@ function buildTrack(
     gain,
     muted: false,
     soloed: false,
-    steps: Array.from({ length: STEP_COUNT }, (_, i) => ({
-      active: stepsActive.includes(i),
-      velocity: velocities?.[i] ?? 1,
-    })),
+    steps: Array.from({ length: STEP_COUNT }, (_, i) => {
+      const active = stepsActive.includes(i);
+      return {
+        active,
+        velocity: velocities?.[i] ?? 1,
+        // Pin the sample onto each active step so swapping the track's
+        // sample later doesn't retroactively re-label already-placed steps.
+        ...(active && sample
+          ? { sampleId: sample.id, sampleVersion: sample.version }
+          : {}),
+      };
+    }),
   };
 }
 
@@ -390,17 +399,16 @@ function buildTrack(
  * and heard no effect.
  */
 function demoEffects(enabledKinds: readonly EffectKind[] = []) {
+  const paramsByKind: Record<EffectKind, Record<string, number>> = {
+    chorus: { wet: 0.4, frequency: 1.5, depth: 0.5 },
+    phaser: { wet: 0.35, frequency: 0.5, octaves: 3 },
+    tremolo: { wet: 0.35, frequency: 5, depth: 0.5 },
+    moogFilter: { wet: 0.5, cutoff: 1800, resonance: 1.2 },
+  };
   return EFFECT_KINDS.map((kind) => ({
     kind,
     enabled: enabledKinds.includes(kind),
-    params:
-      kind === "chorus"
-        ? { wet: 0.4, frequency: 1.5, depth: 0.5 }
-        : kind === "phaser"
-          ? { wet: 0.35, frequency: 0.5, octaves: 3 }
-          : kind === "tremolo"
-            ? { wet: 0.35, frequency: 5, depth: 0.5 }
-            : { wet: 0.5, cutoff: 1800, resonance: 1.2 },
+    params: paramsByKind[kind],
   }));
 }
 

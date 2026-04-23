@@ -54,6 +54,7 @@ export function TrackRow({ track, index }: Props) {
   const setAllStepsOnTrack = useBeatsStore((s) => s.setAllStepsOnTrack);
   const resetTrackMixer = useBeatsStore((s) => s.resetTrackMixer);
   const clearTrackSample = useBeatsStore((s) => s.clearTrackSample);
+  const previewTrack = useBeatsStore((s) => s.previewTrack);
   const removeTrack = useBeatsStore((s) => s.removeTrack);
   const setTrackName = useBeatsStore((s) => s.setTrackName);
   const trackCount = useBeatsStore((s) => s.pattern.tracks.length);
@@ -128,7 +129,7 @@ export function TrackRow({ track, index }: Props) {
         loadCellIntoPattern(selectedCellId);
       }}
     >
-      <div className="grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)] gap-3 lg:gap-5 items-center">
+      <div className="grid grid-cols-1 md:grid-cols-[320px_minmax(0,1fr)] gap-3 items-center">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <Tooltip label="drag to reorder">
             <span
@@ -246,9 +247,10 @@ export function TrackRow({ track, index }: Props) {
           <Tooltip
             label={`gain — drag vertically or arrow keys (double-click resets)`}
           >
-            <div className="shrink-0">
+            <div className="shrink-0 w-9">
               <Knob
-                label={`${track.name ?? track.kind} gain`}
+                label="gain"
+                ariaLabel={`${track.name ?? track.kind} gain`}
                 value={track.gain}
                 min={0}
                 max={1}
@@ -287,75 +289,89 @@ export function TrackRow({ track, index }: Props) {
         </div>
       </div>
 
-      <div className="md:pl-[272px] lg:pl-[320px]">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex-1 min-w-[240px]">
-            <SampleRow trackId={track.id} kind={track.kind} />
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <Tooltip label="fill all steps on this row">
-              <button
-                type="button"
-                onClick={() => setAllStepsOnTrack(track.id, true)}
-                aria-label={`fill all ${track.kind} steps`}
-                className="h-8 w-8 rounded border border-grid text-[10px] font-mono uppercase text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none"
-              >
-                fl
-              </button>
-            </Tooltip>
-            <Tooltip label="clear all steps on this row">
-              <button
-                type="button"
-                onClick={() => setAllStepsOnTrack(track.id, false)}
-                aria-label={`clear all ${track.kind} steps`}
-                className="h-8 w-8 rounded border border-grid text-[10px] font-mono uppercase text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none"
-              >
-                cl
-              </button>
-            </Tooltip>
-            <Tooltip label="reset mute/solo/gain to defaults">
-              <button
-                type="button"
-                onClick={() => resetTrackMixer(track.id)}
-                aria-label={`reset ${track.kind} mixer`}
-                className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none"
-              >
-                ↺
-              </button>
-            </Tooltip>
-            <Tooltip label="remove sample from this row">
-              <button
-                type="button"
-                onClick={() => clearTrackSample(track.id)}
-                aria-label={`clear ${track.kind} sample`}
-                disabled={!track.sampleId}
-                className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
-              >
-                ×
-              </button>
-            </Tooltip>
-            <Tooltip
-              label={
-                trackCount <= 1
-                  ? "can't remove the last row"
-                  : "delete this row — destructive"
-              }
+      <div className="md:pl-[332px] space-y-1.5">
+        <SampleRow trackId={track.id} kind={track.kind} />
+        <div className="flex items-center gap-1 flex-wrap">
+          <Tooltip label="preview current sample">
+            <button
+              type="button"
+              onClick={() => previewTrack(track.id)}
+              disabled={!track.sampleId}
+              aria-label="preview current sample"
+              className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-ink-dim hover:text-ink transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
             >
-              <button
-                type="button"
-                onClick={() => {
-                  syncPatternIntoMatrix();
-                  removeTrack(selectedCellId, track.id);
-                  loadCellIntoPattern(selectedCellId);
-                }}
-                aria-label={`remove ${track.kind} row`}
-                disabled={trackCount <= 1}
-                className="h-8 px-2 rounded border border-neon-red/40 text-neon-red/80 text-[10px] font-mono uppercase tracking-widest hover:border-neon-red hover:text-neon-red hover:bg-neon-red/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-neon-red/40 disabled:hover:text-neon-red/80 disabled:hover:bg-transparent"
-              >
-                del row
-              </button>
-            </Tooltip>
-          </div>
+              ▸
+            </button>
+          </Tooltip>
+          <Tooltip
+            label={
+              track.sampleId
+                ? "fill all steps on this row"
+                : "pick a sample first"
+            }
+          >
+            <button
+              type="button"
+              onClick={() => setAllStepsOnTrack(track.id, true)}
+              aria-label={`fill all ${track.kind} steps`}
+              disabled={!track.sampleId}
+              className="h-8 w-8 rounded border border-grid text-[10px] font-mono uppercase text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
+            >
+              fl
+            </button>
+          </Tooltip>
+          <Tooltip label="clear all steps on this row">
+            <button
+              type="button"
+              onClick={() => setAllStepsOnTrack(track.id, false)}
+              aria-label={`clear all ${track.kind} steps`}
+              className="h-8 w-8 rounded border border-grid text-[10px] font-mono uppercase text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none"
+            >
+              cl
+            </button>
+          </Tooltip>
+          <Tooltip label="reset mute/solo/gain to defaults">
+            <button
+              type="button"
+              onClick={() => resetTrackMixer(track.id)}
+              aria-label={`reset ${track.kind} mixer`}
+              className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none"
+            >
+              ↺
+            </button>
+          </Tooltip>
+          <Tooltip label="remove sample from this row — clears all active steps">
+            <button
+              type="button"
+              onClick={() => clearTrackSample(track.id)}
+              aria-label={`clear ${track.kind} sample`}
+              disabled={!track.sampleId}
+              className="h-8 w-8 rounded border border-grid text-[10px] font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
+            >
+              ×
+            </button>
+          </Tooltip>
+          <Tooltip
+            label={
+              trackCount <= 1
+                ? "can't remove the last row"
+                : "delete this row — destructive"
+            }
+          >
+            <button
+              type="button"
+              onClick={() => {
+                syncPatternIntoMatrix();
+                removeTrack(selectedCellId, track.id);
+                loadCellIntoPattern(selectedCellId);
+              }}
+              aria-label={`remove ${track.kind} row`}
+              disabled={trackCount <= 1}
+              className="h-8 px-2 rounded border border-neon-red/40 text-neon-red/80 text-[10px] font-mono uppercase tracking-widest hover:border-neon-red hover:text-neon-red hover:bg-neon-red/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-neon-red/40 disabled:hover:text-neon-red/80 disabled:hover:bg-transparent"
+            >
+              del row
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>
