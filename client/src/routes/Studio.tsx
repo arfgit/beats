@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { nanoid } from "nanoid";
 import clsx from "clsx";
 import { useParams } from "react-router-dom";
-import { nanoid } from "nanoid";
 import { TRACK_KINDS, type TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { startPatternBridge } from "@/audio/bridge";
@@ -34,6 +34,7 @@ export default function StudioRoute() {
   const syncPatternIntoMatrix = useBeatsStore((s) => s.syncPatternIntoMatrix);
   const loadCellIntoPattern = useBeatsStore((s) => s.loadCellIntoPattern);
   const [newRowKind, setNewRowKind] = useState<TrackKind>("drums");
+  const [mixerOpen, setMixerOpen] = useState(true);
   const loadProject = useBeatsStore((s) => s.loadProject);
   const clearProject = useBeatsStore((s) => s.clearProject);
   const setLockOwner = useBeatsStore((s) => s.setLockOwner);
@@ -218,7 +219,47 @@ export default function StudioRoute() {
           </div>
         </section>
 
-        <EffectsRack />
+        {/* Collapsible mixer — toggle button sits in the section header */}
+        <section className="border border-grid rounded bg-bg-panel/50">
+          <button
+            type="button"
+            onClick={() => setMixerOpen((o) => !o)}
+            aria-expanded={mixerOpen}
+            aria-controls="effects-rack-body"
+            className={clsx(
+              "w-full flex items-center justify-between px-4 py-3 text-left",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet focus-visible:ring-inset rounded",
+              "hover:bg-neon-violet/5 transition-colors duration-150 ease-in motion-reduce:transition-none",
+            )}
+          >
+            <h2 className="text-ink-muted text-xs uppercase tracking-widest">
+              effects (master bus)
+            </h2>
+            <span
+              aria-hidden
+              className={clsx(
+                "text-ink-muted text-xs font-mono transition-transform duration-200 ease-in motion-reduce:transition-none",
+                mixerOpen ? "rotate-0" : "-rotate-90",
+              )}
+            >
+              ▾
+            </span>
+          </button>
+          {/* grid-rows trick: animates to exact height without a fixed max-height cap */}
+          <div
+            id="effects-rack-body"
+            className={clsx(
+              "grid transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none",
+              mixerOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="px-4 pb-4">
+                <EffectsRack />
+              </div>
+            </div>
+          </div>
+        </section>
         <RecorderPanel />
       </div>
     </div>

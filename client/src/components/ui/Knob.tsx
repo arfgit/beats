@@ -3,6 +3,8 @@ import clsx from "clsx";
 
 interface KnobProps {
   label: string;
+  /** Accessible name for the slider element. Defaults to `label` when omitted. */
+  ariaLabel?: string;
   value: number;
   min: number;
   max: number;
@@ -22,6 +24,7 @@ interface KnobProps {
  */
 export function Knob({
   label,
+  ariaLabel,
   value,
   min,
   max,
@@ -108,7 +111,7 @@ export function Knob({
         aria-valuenow={value}
         aria-valuemin={min}
         aria-valuemax={max}
-        aria-label={label}
+        aria-label={ariaLabel ?? label}
         aria-describedby={`${id}-val`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

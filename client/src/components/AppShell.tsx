@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
 export function AppShell() {
   const status = useBeatsStore((s) => s.auth.status);
   const user = useBeatsStore((s) => s.auth.user);
+  const errorMessage = useBeatsStore((s) => s.auth.errorMessage);
   const signInWithGoogle = useBeatsStore((s) => s.signInWithGoogle);
   const signOut = useBeatsStore((s) => s.signOut);
   useRouteTracker();
@@ -136,6 +137,16 @@ export function AppShell() {
               </>
             ) : status === "loading" ? (
               <span className="text-xs text-ink-muted">…</span>
+            ) : status === "error" ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className="text-[10px] text-neon-red uppercase tracking-widest max-w-[160px] truncate"
+                  title={errorMessage ?? "sign-in failed"}
+                >
+                  {errorMessage ?? "sign-in failed"}
+                </span>
+                <Button onClick={() => void signInWithGoogle()}>retry</Button>
+              </div>
             ) : (
               <Button onClick={() => void signInWithGoogle()}>
                 sign in with google
@@ -250,6 +261,21 @@ export function AppShell() {
               </div>
             ) : status === "loading" ? (
               <span className="text-xs text-ink-muted">loading…</span>
+            ) : status === "error" ? (
+              <div className="flex flex-col gap-3">
+                <span className="text-[10px] uppercase tracking-widest text-neon-red">
+                  sign-in failed
+                </span>
+                <span className="text-[10px] text-ink-muted break-words">
+                  {errorMessage ?? "an error occurred — please try again"}
+                </span>
+                <Button
+                  onClick={() => void signInWithGoogle()}
+                  className="w-full"
+                >
+                  retry
+                </Button>
+              </div>
             ) : (
               <Button
                 onClick={() => void signInWithGoogle()}
