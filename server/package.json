@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/functions.js",
   "scripts": {
+    "predev": "lsof -ti tcp:3001 | xargs kill -9 2>/dev/null || true",
     "dev": "tsx watch src/index.ts",
     "build": "tsc --noEmit && node esbuild.config.mjs",
     "build:types": "tsc -p tsconfig.json",
