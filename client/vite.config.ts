@@ -38,6 +38,16 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico}"],
+        // Firebase reserves `/__/*` on every Hosting site for its auth
+        // handler, init scripts, and other helpers. The default Workbox
+        // NavigationRoute would otherwise intercept popup navigations to
+        // `/__/auth/handler` and serve cached `index.html`, which makes
+        // Google sign-in pop a 404 page inside the popup window. The
+        // `/api/*` exemption is defense-in-depth for the same reason —
+        // those paths are rewritten to a Cloud Function in firebase.json
+        // and must never be served the SPA shell. Regression test:
+        // `vite.config.test.ts`. Do not remove without updating that test.
+        navigateFallbackDenylist: [/^\/__\//, /^\/api\//],
         // Clean up caches written by old SW versions so a user upgrading
         // from an earlier deploy doesn't inherit a 300-entry firebase-
         // storage cache full of stale audio.
