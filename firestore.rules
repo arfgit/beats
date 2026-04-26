@@ -54,6 +54,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Per-user upload quota counter. Server writes only — the doc tracks
+    // how many custom samples a user has and their total bytes, used to
+    // gate POST /api/samples/upload-url before issuing a signed URL.
+    match /userQuotas/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     match /invites/{inviteId} {
       allow read, write: if false;
     }

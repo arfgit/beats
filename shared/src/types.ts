@@ -18,6 +18,14 @@ export interface SampleRef {
   ownerId?: string;
   createdAt: number;
   deletedAt?: number;
+  /**
+   * Original filename a user picked when uploading a custom sample.
+   * Display-only — storagePath is server-generated (`samples/users/{uid}/{id}.wav`)
+   * and never reflects the user-supplied name. Sanitized at promote time.
+   */
+  sourceFileName?: string;
+  /** Encoded WAV size of a custom sample's storage object, in bytes. */
+  originalSizeBytes?: number;
 }
 
 export interface TrackStep {

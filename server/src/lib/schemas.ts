@@ -171,6 +171,26 @@ export const uploadUrlBody = z.object({
 // so the client sends no body — just the track id on the URL.
 export const finalizeTrackBody = z.object({}).strict();
 
+// Custom-sample upload. Returns a v4 signed PUT URL the client uses to
+// stream the trimmed WAV directly to GCS. Server creates a pending
+// `samples/{id}` doc up front so quota accounting + cleanup are
+// transactional with the URL issuance.
+export const sampleUploadUrlBody = z.object({
+  name: z.string().min(1).max(120),
+  durationMs: z.number().int().min(100).max(15_000),
+  sourceFileName: z.string().max(200).optional(),
+});
+
+// Finalize reads storagePath from the server-owned samples doc, so the
+// client sends nothing — server verifies object metadata + flips status.
+export const sampleFinalizeBody = z.object({}).strict();
+
+// Batched download URL request — keeps round trips bounded when a
+// project loads N custom samples on hydration.
+export const sampleDownloadUrlsBody = z.object({
+  ids: z.array(z.string().min(1).max(64)).min(1).max(50),
+});
+
 export const updateUserBody = z.object({
   displayName: z
     .string()

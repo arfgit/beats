@@ -20,10 +20,34 @@ export const WAV_CAP_MS = 120_000;
 /**
  * Every TrackKind a user can pick for a row. The first four are what
  * appear as defaults in a fresh cell (see DEFAULT_CELL_KINDS below);
- * "fx" unlocks the synth / ambient / glitch corner of the library but
- * has to be selected manually via the row's kind dropdown.
+ * "fx" unlocks the synth / ambient / glitch corner of the library;
+ * "custom" surfaces the signed-in user's own uploaded + trimmed audio.
+ * Both have to be selected manually via the row's kind dropdown.
  */
-export const TRACK_KINDS = ["drums", "bass", "guitar", "vocals", "fx"] as const;
+export const TRACK_KINDS = [
+  "drums",
+  "bass",
+  "guitar",
+  "vocals",
+  "fx",
+  "custom",
+] as const;
+
+/**
+ * Hard caps for user-uploaded "custom" samples. Enforced at multiple
+ * layers (client UX, server validators, Firestore rules) — defense in
+ * depth. 15 s × stereo 44.1 kHz × 16-bit ≈ 2.65 MB, fits under the
+ * 3 MiB encoded-output cap with headroom; 60 s pre-trim covers most
+ * uploads (a user trimming a 4-min song stays well below). Per-user
+ * count caps storage abuse without burdening normal users — 20 samples
+ * is one full kit's worth.
+ */
+export const CUSTOM_SAMPLE_MAX_DURATION_MS = 15_000;
+export const CUSTOM_SAMPLE_MIN_DURATION_MS = 100;
+export const CUSTOM_SAMPLE_MAX_ENCODED_BYTES = 3 * 1024 * 1024;
+export const CUSTOM_SAMPLE_MAX_SOURCE_BYTES = 30 * 1024 * 1024;
+export const CUSTOM_SAMPLE_MAX_SOURCE_DURATION_MS = 60_000;
+export const CUSTOM_SAMPLE_PER_USER_LIMIT = 20;
 
 /**
  * Default row assignments for a brand-new cell. Always four entries —

@@ -4,6 +4,7 @@ import type { SampleRef, TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { polishSampleName } from "@/lib/sampleNames";
 import { Tooltip } from "@/components/ui/Tooltip";
+import { SampleUploadDialog } from "@/features/samples/SampleUploadDialog";
 
 interface Props {
   trackId: string;
@@ -20,7 +21,9 @@ export function SampleRow({ trackId, kind }: Props) {
   const ensureEngineStarted = useBeatsStore((s) => s.ensureEngineStarted);
   const armedSampleId = useBeatsStore((s) => s.ui.armedSampleId);
   const armSample = useBeatsStore((s) => s.armSample);
+  const isAuthed = useBeatsStore((s) => s.auth.status === "authed");
   const [search, setSearch] = useState("");
+  const [uploadOpen, setUploadOpen] = useState(false);
   // The row is "armed" when its current sample matches the global
   // armed-sample id. Using one global slot rather than per-row state
   // matches the user's mental model ("one sample is the active stamp")
@@ -70,6 +73,43 @@ export function SampleRow({ trackId, kind }: Props) {
   }
 
   if (kindState.samples.length === 0) {
+    // For "custom" we want the empty state to be a primary CTA — the
+    // whole point of the kind is user uploads, so a passive "no samples
+    // available" message would be misleading. Signed-out users get a
+    // hint instead of a button so we don't pop a dialog they can't use.
+    if (kind === "custom") {
+      return (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="text-ink-muted text-[10px] uppercase tracking-widest">
+              no custom samples yet
+            </span>
+            <button
+              type="button"
+              disabled={!isAuthed}
+              onClick={() => setUploadOpen(true)}
+              aria-label="upload a custom sample"
+              className="h-7 px-3 rounded border border-[#ff8c69]/70 text-[#ff8c69] text-[10px] uppercase tracking-widest font-mono hover:bg-[#ff8c69]/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              + upload
+            </button>
+            {!isAuthed && (
+              <span className="text-ink-muted text-[10px]">
+                sign in to upload
+              </span>
+            )}
+          </div>
+          <SampleUploadDialog
+            open={uploadOpen}
+            onClose={() => setUploadOpen(false)}
+            onUploaded={async (sample) => {
+              await ensureEngineStarted().catch(() => undefined);
+              setTrackSample(trackId, sample.id, sample.version);
+            }}
+          />
+        </>
+      );
+    }
     return (
       <p className="text-ink-muted text-[10px] uppercase tracking-widest">
         no {kind} samples available
@@ -171,6 +211,29 @@ export function SampleRow({ trackId, kind }: Props) {
           <span aria-hidden>◈</span>
         </button>
       </Tooltip>
+      {kind === "custom" && (
+        <Tooltip label="upload another custom sample">
+          <button
+            type="button"
+            disabled={!isAuthed}
+            onClick={() => setUploadOpen(true)}
+            aria-label="upload custom sample"
+            className="h-8 w-8 shrink-0 rounded border border-[#ff8c69]/70 bg-bg-panel-2 text-[#ff8c69] hover:bg-[#ff8c69]/10 transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed font-mono text-base leading-none flex items-center justify-center"
+          >
+            +
+          </button>
+        </Tooltip>
+      )}
+      {kind === "custom" && (
+        <SampleUploadDialog
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onUploaded={async (sample) => {
+            await ensureEngineStarted().catch(() => undefined);
+            setTrackSample(trackId, sample.id, sample.version);
+          }}
+        />
+      )}
     </div>
   );
 }

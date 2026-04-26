@@ -5,6 +5,7 @@ import type { SampleRef, TrackKind } from "@beats/shared";
 import { TRACK_KINDS } from "@beats/shared";
 import { db, storage } from "@/lib/firebase";
 import { env } from "@/lib/env";
+import { api } from "@/lib/api";
 import type { BeatsStore } from "./useBeatsStore";
 
 interface KindState {
@@ -23,6 +24,14 @@ export interface SamplesSlice {
   fetchSamples: (kind: TrackKind) => Promise<void>;
   resolveSampleUrl: (sample: SampleRef) => Promise<string>;
   findSampleById: (id: string) => SampleRef | undefined;
+  /**
+   * Insert a freshly-uploaded custom sample at the head of the list
+   * without a refetch. Idempotent on `id` — replaces an existing entry
+   * rather than duplicating, so retries from the upload flow are safe.
+   */
+  addCustomSample: (sample: SampleRef) => void;
+  /** Remove a deleted custom sample from the in-memory list. */
+  removeCustomSample: (id: string) => void;
 }
 
 export const createSamplesSlice: StateCreator<
@@ -42,6 +51,19 @@ export const createSamplesSlice: StateCreator<
   fetchSamples: async (kind) => {
     const existing = get().samples[kind];
     if (existing.status === "loading" || existing.status === "ready") return;
+    // "custom" samples are owner-scoped — short-circuit when signed out
+    // rather than firing a query that Firestore rules will reject. The
+    // empty-state UI prompts the user to sign in to upload.
+    const uid = get().auth.user?.id ?? null;
+    if (kind === "custom" && !uid) {
+      set((s) => ({
+        samples: {
+          ...s.samples,
+          custom: { status: "ready", samples: [], error: null },
+        },
+      }));
+      return;
+    }
     set((s) => ({
       samples: {
         ...s.samples,
@@ -49,37 +71,54 @@ export const createSamplesSlice: StateCreator<
       },
     }));
     try {
-      // Preferred: composite-indexed query with server-side ordering.
-      const preferred = query(
-        collection(db, "samples"),
-        where("kind", "==", kind),
-        where("isBuiltIn", "==", true),
-        orderBy("name", "asc"),
-      );
       let samples: SampleRef[];
-      try {
-        const snap = await getDocs(preferred);
-        samples = snap.docs.map((d) => d.data() as SampleRef);
-      } catch (indexErr) {
-        // Fallback when the composite index isn't built yet (first deploy,
-        // or emulator without indexes). Keep both equality filters so the
-        // query still matches `samples/{allow read: if resource.data.isBuiltIn == true}`
-        // rules — dropping isBuiltIn here causes Firestore to reject the
-        // whole query for signed-out users.
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[samples] composite index unavailable, falling back to client sort`,
-          indexErr,
+      if (kind === "custom") {
+        // Owner-scoped read; no isBuiltIn filter (these are isBuiltIn=false
+        // by construction). status="ready" filter strips pending uploads
+        // that never finalized so abandoned uploads don't pollute the
+        // picker.
+        const customQ = query(
+          collection(db, "samples"),
+          where("kind", "==", "custom"),
+          where("ownerId", "==", uid),
         );
-        const fallback = query(
+        const snap = await getDocs(customQ);
+        samples = snap.docs
+          .map((d) => d.data() as SampleRef & { status?: string })
+          .filter((s) => s.status !== "pending")
+          .sort((a, b) => b.createdAt - a.createdAt);
+      } else {
+        // Preferred: composite-indexed query with server-side ordering.
+        const preferred = query(
           collection(db, "samples"),
           where("kind", "==", kind),
           where("isBuiltIn", "==", true),
+          orderBy("name", "asc"),
         );
-        const snap = await getDocs(fallback);
-        samples = snap.docs
-          .map((d) => d.data() as SampleRef)
-          .sort((a, b) => a.name.localeCompare(b.name));
+        try {
+          const snap = await getDocs(preferred);
+          samples = snap.docs.map((d) => d.data() as SampleRef);
+        } catch (indexErr) {
+          // Fallback when the composite index isn't built yet (first deploy,
+          // or emulator without indexes). Keep both equality filters so the
+          // query still matches `samples/{allow read: if resource.data.isBuiltIn == true}`
+          // rules — dropping isBuiltIn here causes Firestore to reject the
+          // whole query for signed-out users.
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[samples] composite index unavailable, falling back to client sort`,
+            indexErr,
+          );
+          const fallback = query(
+            collection(db, "samples"),
+            where("kind", "==", kind),
+            where("isBuiltIn", "==", true),
+          );
+          const snap = await getDocs(fallback);
+          samples = snap.docs
+            .map((d) => d.data() as SampleRef)
+            .sort((a, b) => a.name.localeCompare(b.name));
+        }
       }
       set((s) => ({
         samples: {
@@ -108,11 +147,69 @@ export const createSamplesSlice: StateCreator<
     // Hardwire override for isolating "audio graph" vs "storage fetch" bugs.
     // When set, every track resolves to the same sample so we can confirm
     // the engine can actually play something.
-    const url = env.audioHardwireUrl
-      ? env.audioHardwireUrl
-      : await getDownloadURL(storageRef(storage, sample.storagePath));
+    if (env.audioHardwireUrl) {
+      set((s) => ({
+        urlCache: { ...s.urlCache, [cacheKey]: env.audioHardwireUrl },
+      }));
+      return env.audioHardwireUrl;
+    }
+    // Built-ins live under `samples/builtin/**` which is world-readable
+    // per storage.rules — the SDK's getDownloadURL gives us a tokened
+    // public URL. User-uploaded customs sit under `samples/users/{uid}/**`
+    // which is deny-by-default; reads go through a server-signed v4 URL
+    // that's owner-scoped. Cache lifetime matches the server's expiry
+    // (10 min); if the cache outlives that we get a 403 on play, which
+    // the engine surfaces and we recover via re-resolve next time.
+    let url: string;
+    if (sample.isBuiltIn) {
+      url = await getDownloadURL(storageRef(storage, sample.storagePath));
+    } else {
+      const result = await api.post<{ urls: Record<string, string> }>(
+        "/samples/download-urls",
+        { ids: [sample.id] },
+      );
+      const signed = result.urls[sample.id];
+      if (!signed) throw new Error(`no download URL for sample ${sample.id}`);
+      url = signed;
+    }
     set((s) => ({ urlCache: { ...s.urlCache, [cacheKey]: url } }));
     return url;
+  },
+
+  addCustomSample: (sample) => {
+    set((s) => {
+      const kindState = s.samples.custom;
+      const filtered = kindState.samples.filter(
+        (existing) => existing.id !== sample.id,
+      );
+      return {
+        samples: {
+          ...s.samples,
+          custom: {
+            // First-write puts the kind into "ready" so the SampleRow
+            // empty-state doesn't show "loading" after a fresh upload
+            // on a session that never called fetchSamples.
+            status: "ready",
+            samples: [sample, ...filtered],
+            error: null,
+          },
+        },
+      };
+    });
+  },
+
+  removeCustomSample: (id) => {
+    set((s) => ({
+      samples: {
+        ...s.samples,
+        custom: {
+          ...s.samples.custom,
+          samples: s.samples.custom.samples.filter(
+            (sample) => sample.id !== id,
+          ),
+        },
+      },
+    }));
   },
 
   findSampleById: (id) => {

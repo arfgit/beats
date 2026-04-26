@@ -18,6 +18,9 @@ const kindAccent: Record<TrackKind, string> = {
   guitar: "text-neon-cyan",
   vocals: "text-neon-violet",
   fx: "text-neon-green",
+  // Coral hex used inline because the design tokens file is locked
+  // for this PR — promote to `--neon-coral` once tokens.css is open.
+  custom: "text-[#ff8c69]",
 };
 
 const kindActiveBg: Record<TrackKind, string> = {
@@ -26,6 +29,7 @@ const kindActiveBg: Record<TrackKind, string> = {
   guitar: "bg-neon-cyan/80 border-neon-cyan",
   vocals: "bg-neon-violet/80 border-neon-violet",
   fx: "bg-neon-green/80 border-neon-green",
+  custom: "bg-[#ff8c69]/80 border-[#ff8c69]",
 };
 
 interface Props {

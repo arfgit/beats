@@ -15,6 +15,7 @@ const KIND_DOT: Record<TrackKind, string> = {
   guitar: "bg-neon-cyan",
   vocals: "bg-neon-violet",
   fx: "bg-neon-green",
+  custom: "bg-[#ff8c69]",
 };
 
 /**
