@@ -65,6 +65,14 @@ export function TrackRow({ track, index }: Props) {
   const syncPatternIntoMatrix = useBeatsStore((s) => s.syncPatternIntoMatrix);
   const loadCellIntoPattern = useBeatsStore((s) => s.loadCellIntoPattern);
   const findSampleById = useBeatsStore((s) => s.findSampleById);
+  const setStepSample = useBeatsStore((s) => s.setStepSample);
+  const armedSampleId = useBeatsStore((s) => s.ui.armedSampleId);
+  // Resolve the armed SampleRef once per row instead of on every cell
+  // render. Cells only need id + version to call setStepSample, but
+  // having the kind lets us gate cross-kind stamping (a vocals stamp
+  // shouldn't write into a drums row).
+  const armedSample = armedSampleId ? findSampleById(armedSampleId) : null;
+  const armedHere = armedSample !== null && armedSample.kind === track.kind;
   const currentStep = useStep();
   const isPlaying = useBeatsStore((s) => s.transport.isPlaying);
   // Running-step ring only appears when the cell this TrackRow belongs
@@ -72,12 +80,15 @@ export function TrackRow({ track, index }: Props) {
   // 2 while cell 5 is live would see a phantom playhead on their
   // editable grid, which is misleading.
   const isLiveCell = isPlaying && selectedCellId === activeCellId;
-  // Resolve sample name for the row badge. Falls back to the track's
-  // sampleId if the samplesSlice hasn't populated yet; the slice fetches
-  // lazily so the id is the best we have on first paint.
+  // Resolve sample name for the row badge. Prefer the pinned snapshot
+  // on the track (paints before samplesSlice hydrates and survives
+  // sample renames), fall back to a live id lookup for legacy projects
+  // written before track.sampleName existed, then to the raw id, then to
+  // "no sample".
   const currentSample = track.sampleId ? findSampleById(track.sampleId) : null;
-  const polishedSampleName = currentSample
-    ? polishSampleName(currentSample.name)
+  const rawSampleName = track.sampleName ?? currentSample?.name ?? null;
+  const polishedSampleName = rawSampleName
+    ? polishSampleName(rawSampleName)
     : null;
   const sampleLabel = polishedSampleName ?? track.sampleId ?? "no sample";
   // Short 1-3 char glyph shown inside active step cells so the user can
@@ -283,6 +294,16 @@ export function TrackRow({ track, index }: Props) {
                 fallbackLabel={sampleLabel}
                 onToggle={() => toggleStep(track.id, i)}
                 findSampleById={findSampleById}
+                armedHere={armedHere}
+                onStamp={() => {
+                  if (!armedSample) return;
+                  setStepSample(
+                    track.id,
+                    i,
+                    armedSample.id,
+                    armedSample.version,
+                  );
+                }}
               />
             );
           })}
@@ -419,6 +440,8 @@ function PerStepCell({
   fallbackLabel,
   onToggle,
   findSampleById,
+  armedHere,
+  onStamp,
 }: {
   step: TrackStep;
   stepIndex: number;
@@ -431,27 +454,44 @@ function PerStepCell({
   fallbackLabel: string;
   onToggle: () => void;
   findSampleById: (id: string) => SampleRef | undefined;
+  /** True when a sample of this row's kind is armed for stamping. */
+  armedHere: boolean;
+  /** Apply the armed sample to this step (replace + activate). */
+  onStamp: () => void;
 }) {
-  // Step-pinned sample > track's current. When the user swaps the row's
-  // sample mid-composition, existing steps keep their own glyph + label
-  // because they remember what was loaded when they were placed.
-  const pinnedSample =
-    step.active && step.sampleId ? findSampleById(step.sampleId) : null;
-  const pinnedName = pinnedSample ? polishSampleName(pinnedSample.name) : null;
+  // Step-pinned snapshot > live id lookup > track-level fallback.
+  // Prefer the per-step `sampleName` snapshot so labels paint before
+  // samplesSlice hydrates and don't change retroactively on rename.
+  // The id-lookup branch covers legacy steps that pre-date the snapshot
+  // field; rendering eventually self-heals as users edit.
+  const pinnedRawName = step.active
+    ? (step.sampleName ??
+      (step.sampleId ? findSampleById(step.sampleId)?.name : null) ??
+      null)
+    : null;
+  const pinnedName = pinnedRawName ? polishSampleName(pinnedRawName) : null;
   const stepGlyph = pinnedName ? makeSampleGlyph(pinnedName) : fallbackGlyph;
   const stepLabel = pinnedName ?? fallbackLabel;
   return (
     <Tooltip
       label={
-        hasSample
-          ? `step ${stepIndex + 1}${step.active ? ` · on · ${stepLabel}` : ""}`
-          : `pick a ${track.kind} sample first`
+        armedHere
+          ? `stamp onto step ${stepIndex + 1}`
+          : hasSample
+            ? `step ${stepIndex + 1}${step.active ? ` · on · ${stepLabel}` : ""}`
+            : `pick a ${track.kind} sample first`
       }
     >
       <button
         type="button"
-        disabled={!hasSample}
+        disabled={!hasSample && !armedHere}
         onClick={() => {
+          if (armedHere) {
+            // Armed-mode click → replace this step's sample with the
+            // armed one (and activate it). Sibling steps are untouched.
+            onStamp();
+            return;
+          }
           if (!hasSample) return;
           onToggle();
         }}
@@ -465,9 +505,16 @@ function PerStepCell({
           "font-mono text-[10px] tracking-tight leading-none uppercase",
           step.active
             ? activeBg
-            : hasSample
+            : hasSample || armedHere
               ? "bg-bg-panel-2 border-grid hover:border-ink-muted cursor-pointer"
               : "bg-bg-panel-2/70 border-dashed border-grid cursor-not-allowed",
+          // Armed-mode visual: violet outline on every targetable step
+          // so the user can SEE the stamping affordance — kills the
+          // "I forgot I was in armed mode" surprise the architect
+          // flagged. Outline is offset so it doesn't fight the active
+          // background highlight.
+          armedHere &&
+            "outline-dashed outline-1 outline-offset-[-2px] outline-neon-violet/60 cursor-copy",
           isCurrent &&
             "ring-2 ring-neon-cyan ring-offset-2 ring-offset-bg-panel",
         )}

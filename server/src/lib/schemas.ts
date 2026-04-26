@@ -18,13 +18,23 @@ const trackStepSchema = z.object({
   // docs that never had these fields.
   sampleId: z.string().nullable().optional(),
   sampleVersion: z.number().int().nullable().optional(),
+  // Display-name snapshot pinned at activation/replace time. Render
+  // prefers this over a live samples-collection lookup so labels paint
+  // before hydration and don't retroactively change on rename. 120-char
+  // ceiling matches the project title cap.
+  sampleName: z.string().max(120).nullable().optional(),
 });
 
 const trackSchema = z.object({
   id: z.string().min(1).max(64),
   kind: z.enum(TRACK_KINDS),
+  // User-editable row label (40-char cap mirrors patternSlice trimming).
+  name: z.string().max(40).optional(),
   sampleId: z.string().nullable(),
   sampleVersion: z.number().int().nullable(),
+  // Track-level sample-name snapshot — secondary fallback in the render
+  // label chain after the per-step snapshot.
+  sampleName: z.string().max(120).nullable().optional(),
   gain: z.number().min(0).max(1),
   muted: z.boolean(),
   soloed: z.boolean(),
@@ -59,8 +69,12 @@ export const legacyPatternSchema = z.object({
 const matrixTrackSchema = z.object({
   id: z.string().min(1).max(64),
   kind: z.enum(TRACK_KINDS),
+  // User-editable row label (40-char cap mirrors patternSlice trimming).
+  name: z.string().max(40).optional(),
   sampleId: z.string().nullable(),
   sampleVersion: z.number().int().nullable(),
+  // Track-level sample-name snapshot — see trackStepSchema.sampleName.
+  sampleName: z.string().max(120).nullable().optional(),
   gain: z.number().min(0).max(1),
   muted: z.boolean(),
   soloed: z.boolean(),

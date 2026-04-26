@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import clsx from "clsx";
 import type { SampleRef, TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { polishSampleName } from "@/lib/sampleNames";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 interface Props {
   trackId: string;
@@ -16,7 +18,14 @@ export function SampleRow({ trackId, kind }: Props) {
   );
   const setTrackSample = useBeatsStore((s) => s.setTrackSample);
   const ensureEngineStarted = useBeatsStore((s) => s.ensureEngineStarted);
+  const armedSampleId = useBeatsStore((s) => s.ui.armedSampleId);
+  const armSample = useBeatsStore((s) => s.armSample);
   const [search, setSearch] = useState("");
+  // The row is "armed" when its current sample matches the global
+  // armed-sample id. Using one global slot rather than per-row state
+  // matches the user's mental model ("one sample is the active stamp")
+  // and prevents two rows from claiming the stamp at the same time.
+  const isArmed = armedSampleId !== null && armedSampleId === currentSampleId;
 
   useEffect(() => {
     void fetchSamples(kind);
@@ -100,7 +109,12 @@ export function SampleRow({ trackId, kind }: Props) {
         value={currentSampleId ?? ""}
         onChange={(e) => void onChange(e)}
         aria-label={`${kind} sample`}
-        className="flex-1 min-w-[160px] h-8 px-2 pr-6 bg-bg-panel-2 border border-grid rounded text-ink-dim font-mono text-xs hover:border-ink-muted focus-visible:border-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none appearance-none cursor-pointer"
+        className={clsx(
+          "flex-1 min-w-[160px] h-8 px-2 pr-6 bg-bg-panel-2 border rounded text-ink-dim font-mono text-xs hover:border-ink-muted focus-visible:border-neon-violet transition-colors duration-200 ease-in motion-reduce:transition-none appearance-none cursor-pointer",
+          isArmed
+            ? "border-neon-violet ring-2 ring-neon-violet/60"
+            : "border-grid",
+        )}
         style={{
           backgroundImage:
             "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' stroke='%23b8a3e8' stroke-width='1.2' fill='none'/></svg>\")",
@@ -121,6 +135,42 @@ export function SampleRow({ trackId, kind }: Props) {
           />
         ))}
       </select>
+      <Tooltip
+        label={
+          currentSampleId
+            ? isArmed
+              ? "stop stamping (Esc)"
+              : "stamp this sample onto a step"
+            : "pick a sample first"
+        }
+      >
+        <button
+          type="button"
+          disabled={!currentSampleId}
+          aria-pressed={isArmed}
+          aria-label={
+            isArmed
+              ? `stop stamping ${kind} sample`
+              : `stamp ${kind} sample onto a step`
+          }
+          onClick={() => {
+            if (!currentSampleId) return;
+            armSample(isArmed ? null : currentSampleId);
+          }}
+          className={clsx(
+            "h-8 w-8 shrink-0 rounded border font-mono text-xs flex items-center justify-center transition-colors duration-150 motion-reduce:transition-none",
+            !currentSampleId &&
+              "opacity-40 border-grid bg-bg-panel-2/70 cursor-not-allowed",
+            currentSampleId && isArmed
+              ? "border-neon-violet bg-neon-violet/20 text-neon-violet"
+              : currentSampleId
+                ? "border-grid bg-bg-panel-2 text-ink-dim hover:border-neon-violet hover:text-neon-violet"
+                : "",
+          )}
+        >
+          <span aria-hidden>◈</span>
+        </button>
+      </Tooltip>
     </div>
   );
 }

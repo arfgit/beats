@@ -32,6 +32,14 @@ export interface TrackStep {
    */
   sampleId?: string | null;
   sampleVersion?: number | null;
+  /**
+   * Snapshot of `SampleRef.name` at the moment the step was activated or
+   * the sample was replaced. Render path prefers this so labels paint
+   * before the samples library hydrates and don't retroactively change
+   * when a user renames a sample. Optional for backwards compat with
+   * pre-refactor docs; render falls back to a live id lookup.
+   */
+  sampleName?: string | null;
 }
 
 export interface Track {
@@ -45,6 +53,13 @@ export interface Track {
   name?: string;
   sampleId: string | null;
   sampleVersion: number | null;
+  /**
+   * Snapshot of the track's currently-selected sample name. Mirror of
+   * `TrackStep.sampleName` at the row level — used as the secondary
+   * fallback in the label chain (step.sampleName ?? track.sampleName ??
+   * lookup). Optional + nullable for backwards compat.
+   */
+  sampleName?: string | null;
   gain: number;
   muted: boolean;
   soloed: boolean;

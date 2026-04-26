@@ -1,8 +1,10 @@
 import type { StateCreator } from "zustand";
 import { produce } from "immer";
-import type { Pattern, EffectKind } from "@beats/shared";
+import type { Pattern, EffectKind, SampleRef } from "@beats/shared";
 import { BPM_MAX, BPM_MIN, createDefaultPattern } from "@beats/shared";
-import { recordCommand, type CommandHistorySlice } from "./commandHistorySlice";
+import { recordCommand } from "./commandHistorySlice";
+import { snapshotForStep, snapshotForTrack } from "./sampleSnapshot";
+import type { BeatsStore } from "./useBeatsStore";
 
 export interface PatternSlice {
   pattern: Pattern;
@@ -36,6 +38,17 @@ export interface PatternSlice {
   resetTrackMixer: (trackId: string) => void;
   /** Remove the sample assignment from one track. */
   clearTrackSample: (trackId: string) => void;
+  /**
+   * Replace the sample on a single step in place — does not touch sibling
+   * steps or the track-level default. If the step is currently inactive,
+   * it is also activated (drop-to-place semantics for armed-sample mode).
+   */
+  setStepSample: (
+    trackId: string,
+    stepIndex: number,
+    sampleId: string,
+    sampleVersion: number,
+  ) => void;
 }
 
 const clamp = (n: number, lo: number, hi: number) =>
@@ -47,8 +60,21 @@ const clamp = (n: number, lo: number, hi: number) =>
  * pattern directly without polluting history — a Phase 3 refinement could
  * add coalescing if users want to undo a knob turn.
  */
+// Resolves a sample by id from the live samples slice. Pattern slice
+// actions need this to pin `sampleName` at write time without forcing
+// every caller to look up the SampleRef themselves. Returns null when
+// the lookup misses (sample not yet hydrated, deleted, etc.) — pinning
+// `null` keeps the field present and explicit rather than ambiguous.
+function lookupSample(
+  get: () => BeatsStore,
+  id: string | null,
+): SampleRef | null {
+  if (!id) return null;
+  return get().findSampleById(id) ?? null;
+}
+
 export const createPatternSlice: StateCreator<
-  PatternSlice & CommandHistorySlice,
+  BeatsStore,
   [],
   [],
   PatternSlice
@@ -59,7 +85,12 @@ export const createPatternSlice: StateCreator<
 
   setPattern: (pattern) => set({ pattern }),
 
-  toggleStep: (trackId, stepIndex) =>
+  toggleStep: (trackId, stepIndex) => {
+    // Resolve the track's current sample BEFORE entering the recorder
+    // so we can pin the canonical `name` from SampleRef (recordCommand
+    // only exposes the pattern draft, not the full store).
+    const trackBefore = get().pattern.tracks.find((t) => t.id === trackId);
+    const sample = lookupSample(get, trackBefore?.sampleId ?? null);
     recordCommand(get, set, "toggle step", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       const step = track?.steps[stepIndex];
@@ -67,12 +98,20 @@ export const createPatternSlice: StateCreator<
       const willBeActive = !step.active;
       step.active = willBeActive;
       if (willBeActive) {
-        // Snapshot the row's current sample onto the step so a later
-        // sample swap on the row doesn't retroactively change what this
-        // step plays — each step remembers the marker it was placed with.
-        if (track.sampleId && track.sampleVersion != null) {
+        // Snapshot the row's current sample (id, version, name) onto the
+        // step so a later sample swap on the row doesn't retroactively
+        // change what this step plays — each step remembers the marker it
+        // was placed with. Prefer the live SampleRef.name; fall back to
+        // the track's already-pinned name when samples haven't hydrated.
+        if (sample) {
+          const snap = snapshotForStep(sample);
+          step.sampleId = snap.sampleId;
+          step.sampleVersion = snap.sampleVersion;
+          step.sampleName = snap.sampleName;
+        } else if (track.sampleId && track.sampleVersion != null) {
           step.sampleId = track.sampleId;
           step.sampleVersion = track.sampleVersion;
+          step.sampleName = track.sampleName ?? null;
         }
       } else {
         // On deactivate, clear the marker so a subsequent re-click picks
@@ -80,8 +119,10 @@ export const createPatternSlice: StateCreator<
         // on empty steps).
         delete step.sampleId;
         delete step.sampleVersion;
+        delete step.sampleName;
       }
-    }),
+    });
+  },
 
   setStepVelocity: (trackId, stepIndex, velocity) =>
     set((s) => ({
@@ -93,13 +134,23 @@ export const createPatternSlice: StateCreator<
       }),
     })),
 
-  setTrackSample: (trackId, sampleId, sampleVersion) =>
+  setTrackSample: (trackId, sampleId, sampleVersion) => {
+    // Look up the SampleRef for its canonical name BEFORE the recorder.
+    // Pinning the name on the track means future toggles on this row
+    // can copy it to steps even if the samples slice is later cleared.
+    const sample = lookupSample(get, sampleId);
     recordCommand(get, set, "set sample", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       if (!track) return;
+      const snap = snapshotForTrack(sample);
       track.sampleId = sampleId;
       track.sampleVersion = sampleVersion;
-    }),
+      track.sampleName = snap.sampleName;
+      // Deliberately do NOT rewrite existing steps' snapshots — each
+      // step keeps the sample it was placed with. This is the contract
+      // promised by the per-step snapshot fields.
+    });
+  },
 
   setTrackName: (trackId, name) =>
     recordCommand(get, set, "rename track", (draft) => {
@@ -170,11 +221,16 @@ export const createPatternSlice: StateCreator<
           step.active = false;
           delete step.sampleId;
           delete step.sampleVersion;
+          delete step.sampleName;
         }
       }
     }),
 
-  setAllStepsOnTrack: (trackId, active) =>
+  setAllStepsOnTrack: (trackId, active) => {
+    // Resolve the track's current sample once (used to pin the name on
+    // every step we're activating) before entering the recorder.
+    const trackBefore = get().pattern.tracks.find((t) => t.id === trackId);
+    const sample = lookupSample(get, trackBefore?.sampleId ?? null);
     recordCommand(
       get,
       set,
@@ -187,13 +243,16 @@ export const createPatternSlice: StateCreator<
           if (active && track.sampleId && track.sampleVersion != null) {
             step.sampleId = track.sampleId;
             step.sampleVersion = track.sampleVersion;
+            step.sampleName = sample?.name ?? track.sampleName ?? null;
           } else if (!active) {
             delete step.sampleId;
             delete step.sampleVersion;
+            delete step.sampleName;
           }
         }
       },
-    ),
+    );
+  },
 
   resetTrackMixer: (trackId) =>
     recordCommand(get, set, "reset mixer", (draft) => {
@@ -210,6 +269,7 @@ export const createPatternSlice: StateCreator<
       if (!track) return;
       track.sampleId = null;
       track.sampleVersion = null;
+      track.sampleName = null;
       // Deactivate all steps and strip their pinned samples so the row is
       // fully blank — leaving active steps with no track sample leaves them
       // unclickable (hasSample=false) but still visually lit, which is
@@ -218,6 +278,26 @@ export const createPatternSlice: StateCreator<
         step.active = false;
         delete step.sampleId;
         delete step.sampleVersion;
+        delete step.sampleName;
       }
     }),
+
+  setStepSample: (trackId, stepIndex, sampleId, sampleVersion) => {
+    // Look up the canonical SampleRef so we can pin the name. If the
+    // lookup misses, the step still gets the correct id/version pair —
+    // label falls back to the live lookup (or "missing") at render.
+    const sample = lookupSample(get, sampleId);
+    recordCommand(get, set, "replace step sample", (draft) => {
+      const track = draft.tracks.find((t) => t.id === trackId);
+      const step = track?.steps[stepIndex];
+      if (!track || !step) return;
+      // Activate-on-place: dropping a sample on an inactive step
+      // implicitly turns the step on. Matches user expectation that
+      // placing a sample = "I want this to play here."
+      step.active = true;
+      step.sampleId = sampleId;
+      step.sampleVersion = sampleVersion;
+      step.sampleName = sample?.name ?? null;
+    });
+  },
 });

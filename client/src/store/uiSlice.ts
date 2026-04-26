@@ -13,14 +13,22 @@ export interface UiSlice {
   ui: {
     toasts: Toast[];
     tooltipsEnabled: boolean;
+    /**
+     * Id of the sample currently "armed" for replace-on-click. When set,
+     * clicking a step in the grid replaces that step's sample instead of
+     * the usual toggle-active behavior. Null when no sample is armed.
+     */
+    armedSampleId: string | null;
   };
   pushToast: (kind: ToastKind, message: string) => string;
   dismissToast: (id: string) => void;
   setTooltipsEnabled: (enabled: boolean) => void;
+  /** Arm a sample for replace-on-click. Pass null to disarm. */
+  armSample: (sampleId: string | null) => void;
 }
 
 export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
-  ui: { toasts: [], tooltipsEnabled: true },
+  ui: { toasts: [], tooltipsEnabled: true, armedSampleId: null },
 
   pushToast: (kind, message) => {
     const id = nanoid(8);
@@ -42,4 +50,7 @@ export const createUiSlice: StateCreator<UiSlice, [], [], UiSlice> = (set) => ({
 
   setTooltipsEnabled: (enabled) =>
     set((s) => ({ ui: { ...s.ui, tooltipsEnabled: enabled } })),
+
+  armSample: (sampleId) =>
+    set((s) => ({ ui: { ...s.ui, armedSampleId: sampleId } })),
 });

@@ -18,6 +18,7 @@ import {
   STEP_COUNT,
   TRACK_KINDS,
 } from "@beats/shared";
+import { snapshotForStep, snapshotForTrack } from "./sampleSnapshot";
 import type { BeatsStore } from "./useBeatsStore";
 
 export interface MatrixSlice {
@@ -368,11 +369,12 @@ function buildTrack(
   gain = 0.8,
   velocities?: Partial<Record<number, number>>,
 ): Track {
+  const trackSnapshot = snapshotForTrack(sample);
+  const stepSnapshot = snapshotForStep(sample);
   return {
     id,
     kind,
-    sampleId: sample?.id ?? null,
-    sampleVersion: sample?.version ?? null,
+    ...trackSnapshot,
     gain,
     muted: false,
     soloed: false,
@@ -381,11 +383,11 @@ function buildTrack(
       return {
         active,
         velocity: velocities?.[i] ?? 1,
-        // Pin the sample onto each active step so swapping the track's
-        // sample later doesn't retroactively re-label already-placed steps.
-        ...(active && sample
-          ? { sampleId: sample.id, sampleVersion: sample.version }
-          : {}),
+        // Pin the sample identity (id, version, name) onto each active
+        // step so swapping the track's sample later doesn't retroactively
+        // re-label already-placed steps and so labels paint before the
+        // samples library hydrates.
+        ...(active && sample ? stepSnapshot : {}),
       };
     }),
   };

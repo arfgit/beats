@@ -116,7 +116,26 @@ export const createSamplesSlice: StateCreator<
   },
 
   findSampleById: (id) => {
-    const all = Object.values(get().samples).flatMap((k) => k.samples);
-    return all.find((s) => s.id === id);
+    // Lazy memoization: rebuild the id→ref map only when one of the
+    // per-kind sample arrays has been replaced (set() always assigns a
+    // fresh array, so reference equality on each kind is the cheap
+    // truth signal). Render path can hit this 30+ times per frame so
+    // a linear scan over ~700 docs adds up; a Map lookup is O(1).
+    const samples = get().samples;
+    const refs = TRACK_KINDS.map((k) => samples[k].samples);
+    const stale = !idMapKey || refs.some((r, i) => r !== idMapKey![i]);
+    if (stale) {
+      idMapKey = refs;
+      idMap = new Map(
+        refs.flatMap((arr) => arr.map((s) => [s.id, s] as const)),
+      );
+    }
+    return idMap.get(id);
   },
 });
+
+// Module-scoped memo for findSampleById. Lives outside the slice
+// closure so a single shared map is reused across the (singleton)
+// store rather than being recomputed per-call.
+let idMapKey: SampleRef[][] | null = null;
+let idMap: Map<string, SampleRef> = new Map();

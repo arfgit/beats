@@ -18,6 +18,8 @@ import { ProjectList } from "@/features/studio/ProjectList";
 import { PeerCursors } from "@/features/studio/PeerCursors";
 import { useSpaceToPlay } from "@/features/studio/useSpaceToPlay";
 import { useUndoShortcuts } from "@/features/studio/useUndoShortcuts";
+import { useDisarmOnEscape } from "@/features/studio/useDisarmOnEscape";
+import { ArmedBanner } from "@/features/studio/ArmedBanner";
 
 export default function StudioRoute() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -44,6 +46,7 @@ export default function StudioRoute() {
   const authedUid = useBeatsStore((s) => s.auth.user?.id ?? null);
   useSpaceToPlay();
   useUndoShortcuts();
+  useDisarmOnEscape();
 
   const tabIdRef = useRef<string>(nanoid(8));
 
@@ -164,6 +167,7 @@ export default function StudioRoute() {
 
         <TransportBar />
         <SaveShareBar />
+        <ArmedBanner />
 
         <MatrixGrid />
 
