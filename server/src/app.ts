@@ -89,6 +89,24 @@ export function createApp() {
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
     const requestId = (req as Request & { id: string }).id;
     if (err instanceof AppError) {
+      // Log AppErrors at warn level so validation failures (400) end up
+      // in `firebase functions:log` with their `details` payload — the
+      // bare `request errored` line at the response layer didn't include
+      // the offending field paths, which made every 400 a fishing
+      // expedition. AppError details = Record<string, string[]> from
+      // flattenZod for ValidationError, so a single log line tells us
+      // exactly what shape mismatched.
+      logger.warn(
+        {
+          requestId,
+          path: req.path,
+          method: req.method,
+          code: err.code,
+          status: err.statusCode,
+          details: err.details,
+        },
+        `app error: ${err.message}`,
+      );
       res.status(err.statusCode).json({ error: err.toApiError(requestId) });
       return;
     }
