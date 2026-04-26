@@ -81,9 +81,17 @@ const matrixTrackSchema = z.object({
   steps: z.array(trackStepSchema).length(STEP_COUNT),
 });
 
+// Track count per cell: was strictly 4, but the studio UI exposes
+// `addTrack` / `removeTrack` so users routinely build cells with N
+// tracks. The save path was rejecting any cell that wasn't exactly 4,
+// which broke save+go-live for anyone who had touched the row count.
+// Cap at a sane upper bound (8 — twice TRACKS_PER_CELL) so a runaway
+// addTrack loop can't bloat a project doc, but allow the natural
+// product range of 1-8.
+const MAX_TRACKS_PER_CELL = TRACKS_PER_CELL * 2;
 const mixerPatternSchema = z.object({
   stepCount: z.literal(STEP_COUNT),
-  tracks: z.array(matrixTrackSchema).length(TRACKS_PER_CELL),
+  tracks: z.array(matrixTrackSchema).min(1).max(MAX_TRACKS_PER_CELL),
 });
 
 const mixerCellSchema = z.object({
