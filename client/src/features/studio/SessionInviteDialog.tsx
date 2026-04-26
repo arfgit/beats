@@ -26,10 +26,12 @@ export function SessionInviteDialog({ open, onClose }: Props) {
   const project = useBeatsStore((s) => s.project.current);
   const startSession = useBeatsStore((s) => s.startSession);
   const endSession = useBeatsStore((s) => s.endSession);
+  const createProject = useBeatsStore((s) => s.createProject);
   const session = useBeatsStore((s) => s.collab.session);
   const pushToast = useBeatsStore((s) => s.pushToast);
   const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
   const [busy, setBusy] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -70,26 +72,53 @@ export function SessionInviteDialog({ open, onClose }: Props) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  if (!open || !project) return null;
+  if (!open) return null;
 
-  const isOwner = project.ownerId === myUid;
+  const isOwner = project ? project.ownerId === myUid : true;
   const sessionActive = session.id !== null;
   // Build the share URL from the current origin so we don't leak prod
   // into dev or vice versa. Trailing slash optional — fetch handlers
   // strip them.
   const shareUrl =
-    typeof window !== "undefined" && session.id
+    typeof window !== "undefined" && session.id && project
       ? `${window.location.origin}/studio/${project.id}?session=${session.id}`
       : "";
   const participantCount = Object.keys(session.participants).length;
 
   const onStart = async () => {
+    if (!project) return;
     setBusy(true);
     try {
       const id = await startSession(project.id);
       if (!id) {
         pushToast("error", "couldn't start a session — try again");
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // No saved project yet — the only path to a session is to first
+  // create one. Save under the user-supplied (or default) title, then
+  // pivot directly into startSession with the new id. Keeps the user
+  // in one dialog instead of bouncing them out to the SaveShareBar.
+  const onSaveAndStart = async () => {
+    setBusy(true);
+    try {
+      const title = draftTitle.trim() || "untitled beat";
+      const created = await createProject(title, false);
+      if (!created) {
+        pushToast("error", "couldn't save the project");
+        return;
+      }
+      const id = await startSession(created.id);
+      if (!id) {
+        pushToast("error", "saved, but couldn't start the session");
+      } else {
+        pushToast("success", "project saved and session started");
+      }
+    } catch {
+      pushToast("error", "save failed");
     } finally {
       setBusy(false);
     }
@@ -149,7 +178,39 @@ export function SessionInviteDialog({ open, onClose }: Props) {
           </button>
         </header>
 
-        {!sessionActive && (
+        {!sessionActive && !project && (
+          <div className="space-y-3">
+            <p className="text-ink-dim text-xs">
+              Save your project first. We&apos;ll save it, then start the live
+              session — anyone with the link can join from there.
+            </p>
+            <input
+              type="text"
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              placeholder="title"
+              maxLength={120}
+              aria-label="project title"
+              className="w-full h-9 px-2 bg-bg-panel-2 border border-grid rounded text-ink font-mono text-sm focus-visible:outline-none focus-visible:border-neon-violet"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClose}
+                disabled={busy}
+              >
+                cancel
+              </Button>
+              <Button type="button" onClick={onSaveAndStart} disabled={busy}>
+                {busy ? "saving…" : "save & go live"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!sessionActive && project && (
           <div className="space-y-3">
             <p className="text-ink-dim text-xs">
               Start a live session and share the link. Anyone signed in who

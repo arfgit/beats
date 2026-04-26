@@ -159,28 +159,22 @@ export default function StudioRoute() {
             {authedUid && (
               <Tooltip
                 label={
-                  !loadedProjectId
-                    ? "open a project first to go live"
-                    : liveSessionId
-                      ? "manage live session"
-                      : "start a live collab session"
+                  liveSessionId
+                    ? "manage live session"
+                    : loadedProjectId
+                      ? "start a live collab session"
+                      : "save your project to start a live session"
                 }
               >
                 <button
                   type="button"
                   onClick={() => setSessionDialogOpen(true)}
-                  disabled={!loadedProjectId}
                   aria-label="live session"
                   className={clsx(
                     "h-8 px-3 rounded border text-[10px] uppercase tracking-widest font-mono transition-colors duration-150 motion-reduce:transition-none flex items-center gap-1.5",
-                    !loadedProjectId &&
-                      "border-grid text-ink-muted opacity-40 cursor-not-allowed",
-                    loadedProjectId &&
-                      liveSessionId &&
-                      "border-neon-green text-neon-green bg-neon-green/10 hover:bg-neon-green/20",
-                    loadedProjectId &&
-                      !liveSessionId &&
-                      "border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet",
+                    liveSessionId
+                      ? "border-neon-green text-neon-green bg-neon-green/10 hover:bg-neon-green/20"
+                      : "border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet",
                   )}
                 >
                   <span
