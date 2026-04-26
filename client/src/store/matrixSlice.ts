@@ -143,12 +143,21 @@ export const createMatrixSlice: StateCreator<
     },
 
     toggleCellEnabled: (cellId) => {
+      let nextEnabled = false;
       set((s) => ({
         matrix: produce(s.matrix, (draft) => {
           const cell = draft.cells.find((c) => c.id === cellId);
-          if (cell) cell.enabled = !cell.enabled;
+          if (cell) {
+            cell.enabled = !cell.enabled;
+            nextEnabled = cell.enabled;
+          }
         }),
       }));
+      get().emitEdit({
+        kind: "cell/setEnabled",
+        cellId,
+        enabled: nextEnabled,
+      });
     },
 
     reorderCells: (fromIndex, toIndex) => {
@@ -232,6 +241,11 @@ export const createMatrixSlice: StateCreator<
           }
         }),
       }));
+      get().emitEdit({
+        kind: "cell/setName",
+        cellId,
+        name: name.trim().slice(0, 24),
+      });
     },
 
     toggleAllCellsEnabled: () => {
@@ -271,6 +285,12 @@ export const createMatrixSlice: StateCreator<
           }
         }),
       }));
+      get().emitEdit({
+        kind: "track/setKind",
+        cellId,
+        trackId,
+        newKind: kind,
+      });
     },
 
     syncPatternIntoMatrix: () => {

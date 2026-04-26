@@ -9,6 +9,7 @@ import {
   initializeFirestore,
 } from "firebase/firestore";
 import { getStorage, connectStorageEmulator } from "firebase/storage";
+import { connectDatabaseEmulator, getDatabase } from "firebase/database";
 import { env } from "./env";
 
 // Surface a friendly, loud error if the config is missing before any
@@ -38,6 +39,10 @@ export const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: true,
 });
 export const storage = getStorage(app);
+// Realtime Database — used exclusively for ephemeral collab session
+// state (presence, edit log, snapshot). Project state stays canonical
+// in Firestore; RTDB is a "fast lane" for the live channel only.
+export const rtdb = getDatabase(app);
 export const googleProvider = new GoogleAuthProvider();
 
 // Loud boot-time diagnostic. Easy to grep for in DevTools when data isn't
@@ -55,4 +60,5 @@ if (env.useEmulators) {
   connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "localhost", 8080);
   connectStorageEmulator(storage, "localhost", 9199);
+  connectDatabaseEmulator(rtdb, "localhost", 9000);
 }

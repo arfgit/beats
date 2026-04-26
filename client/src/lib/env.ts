@@ -4,8 +4,7 @@
 // through on null/undefined — the empty string passes straight through and
 // Firebase then uses "" as the authDomain, which resolves /__/auth/handler
 // as a relative URL on localhost and causes a 404 on sign-in.
-const projectId =
-  import.meta.env.VITE_FIREBASE_PROJECT_ID || "beats-prod-ant";
+const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || "beats-prod-ant";
 
 export const env = {
   firebase: {
@@ -13,6 +12,13 @@ export const env = {
     authDomain:
       import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
       `${projectId}.firebaseapp.com`,
+    // Realtime Database for collab sessions. Defaults to the project's
+    // canonical `<projectId>-default-rtdb.firebaseio.com` endpoint —
+    // override only if the project lives in a non-default region (e.g.
+    // `*.europe-west1.firebasedatabase.app`).
+    databaseURL:
+      import.meta.env.VITE_FIREBASE_DATABASE_URL ||
+      `https://${projectId}-default-rtdb.firebaseio.com`,
     projectId,
     // Default to the modern `.firebasestorage.app` bucket (that's where
     // we seed samples). Firebase SDK's own fallback is `<id>.appspot.com`,
@@ -20,8 +26,7 @@ export const env = {
     storageBucket:
       import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
       `${projectId}.firebasestorage.app`,
-    messagingSenderId:
-      import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
     appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
   },
   useEmulators: import.meta.env.VITE_USE_EMULATORS === "true",

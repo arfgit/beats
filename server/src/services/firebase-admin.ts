@@ -5,6 +5,7 @@ import {
   applicationDefault,
 } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getDatabase } from "firebase-admin/database";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { logger } from "../lib/logger.js";
@@ -23,6 +24,13 @@ function init() {
   // doesn't exist on this project (leads to 404 + CORS failures).
   const storageBucket =
     process.env.FIREBASE_STORAGE_BUCKET ?? `${projectId}.firebasestorage.app`;
+  // Realtime Database URL — needed at init time so getDatabase() can
+  // hand back a usable ref. Defaults to the canonical
+  // `<projectId>-default-rtdb.firebaseio.com`; override via env for
+  // non-default regions.
+  const databaseURL =
+    process.env.FIREBASE_DATABASE_URL ??
+    `https://${projectId}-default-rtdb.firebaseio.com`;
   // In the Firebase Functions gen-2 / Cloud Run runtime, credentials come
   // from the attached service account via the metadata server — no env var
   // is set, and `applicationDefault()` discovers them automatically. Detect
@@ -35,6 +43,7 @@ function init() {
       credential: cert(JSON.parse(serviceAccountJson)),
       projectId,
       storageBucket,
+      databaseURL,
     });
     logger.info({ projectId }, "firebase-admin initialized from env JSON");
     return;
@@ -45,6 +54,7 @@ function init() {
       credential: applicationDefault(),
       projectId,
       storageBucket,
+      databaseURL,
     });
     logger.info(
       {
@@ -57,7 +67,7 @@ function init() {
   }
 
   // Emulator-only mode — no real credentials.
-  initializeApp({ projectId, storageBucket });
+  initializeApp({ projectId, storageBucket, databaseURL });
   logger.warn(
     { projectId },
     "firebase-admin initialized without credentials (emulator mode)",
@@ -69,3 +79,4 @@ init();
 export const adminAuth = getAuth();
 export const db = getFirestore();
 export const storage = getStorage();
+export const rtdb = getDatabase();

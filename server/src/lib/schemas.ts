@@ -191,6 +191,17 @@ export const sampleDownloadUrlsBody = z.object({
   ids: z.array(z.string().min(1).max(64)).min(1).max(50),
 });
 
+// Collab session create — body carries the projectId the session will
+// mirror; the server reads the project doc to verify ownership and
+// to seed RTDB state with the canonical pattern.
+export const createSessionBody = z.object({
+  projectId: z.string().min(1).max(64),
+});
+
+// Join / leave / end carry no body — the session id lives on the URL,
+// the server reads everything else from Firestore + RTDB.
+export const sessionEmptyBody = z.object({}).strict();
+
 export const updateUserBody = z.object({
   displayName: z
     .string()

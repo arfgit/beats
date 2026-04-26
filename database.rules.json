@@ -1,0 +1,37 @@
+{
+  "rules": {
+    "sessions": {
+      "$sessionId": {
+        ".read": "auth != null && root.child('sessions').child($sessionId).child('meta').exists()",
+        ".write": false,
+
+        "meta": {
+          ".write": false
+        },
+
+        "state": {
+          ".write": "auth != null && root.child('sessions').child($sessionId).child('meta').child('ownerUid').val() == auth.uid"
+        },
+
+        "participants": {
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid && root.child('sessions').child($sessionId).child('meta').exists()"
+          }
+        },
+
+        "edits": {
+          "$editId": {
+            ".write": "auth != null && root.child('sessions').child($sessionId).child('participants').child(auth.uid).exists() && (!data.exists() || newData.child('peerId').val() == auth.uid)",
+            ".validate": "newData.hasChildren(['peerId', 'op', 'clientTs']) && newData.child('peerId').val() == auth.uid"
+          }
+        },
+
+        "presence": {
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid && root.child('sessions').child($sessionId).child('participants').child(auth.uid).exists()"
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ import authRoutes from "./routes/auth.js";
 import projectRoutes from "./routes/projects.js";
 import trackRoutes from "./routes/tracks.js";
 import sampleRoutes from "./routes/samples.js";
+import sessionRoutes from "./routes/sessions.js";
 import userRoutes from "./routes/users.js";
 import analyticsRoutes from "./routes/analytics.js";
 import adminRoutes from "./routes/admin.js";
@@ -64,6 +65,7 @@ export function createApp() {
   app.use("/api", projectRoutes);
   app.use("/api", trackRoutes);
   app.use("/api", sampleRoutes);
+  app.use("/api", sessionRoutes);
   app.use("/api", userRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", adminRoutes);

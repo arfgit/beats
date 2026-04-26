@@ -122,9 +122,15 @@ export const createPatternSlice: StateCreator<
         delete step.sampleName;
       }
     });
+    get().emitEdit({
+      kind: "matrix/toggleStep",
+      cellId: get().selectedCellId,
+      trackId,
+      step: stepIndex,
+    });
   },
 
-  setStepVelocity: (trackId, stepIndex, velocity) =>
+  setStepVelocity: (trackId, stepIndex, velocity) => {
     set((s) => ({
       pattern: produce(s.pattern, (p) => {
         const track = p.tracks.find((t) => t.id === trackId);
@@ -132,7 +138,15 @@ export const createPatternSlice: StateCreator<
         if (!step) return;
         step.velocity = clamp(velocity, 0, 1);
       }),
-    })),
+    }));
+    get().emitEdit({
+      kind: "matrix/setStepVelocity",
+      cellId: get().selectedCellId,
+      trackId,
+      step: stepIndex,
+      velocity: clamp(velocity, 0, 1),
+    });
+  },
 
   setTrackSample: (trackId, sampleId, sampleVersion) => {
     // Look up the SampleRef for its canonical name BEFORE the recorder.
@@ -150,9 +164,17 @@ export const createPatternSlice: StateCreator<
       // step keeps the sample it was placed with. This is the contract
       // promised by the per-step snapshot fields.
     });
+    get().emitEdit({
+      kind: "track/setSample",
+      cellId: get().selectedCellId,
+      trackId,
+      sampleId,
+      sampleVersion,
+      sampleName: sample?.name ?? null,
+    });
   },
 
-  setTrackName: (trackId, name) =>
+  setTrackName: (trackId, name) => {
     recordCommand(get, set, "rename track", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       if (!track) return;
@@ -162,59 +184,109 @@ export const createPatternSlice: StateCreator<
       } else {
         track.name = trimmed.slice(0, 40);
       }
-    }),
+    });
+    get().emitEdit({
+      kind: "track/setName",
+      cellId: get().selectedCellId,
+      trackId,
+      name: name.trim().slice(0, 40),
+    });
+  },
 
-  setTrackGain: (trackId, gain) =>
+  setTrackGain: (trackId, gain) => {
     set((s) => ({
       pattern: produce(s.pattern, (p) => {
         const track = p.tracks.find((t) => t.id === trackId);
         if (!track) return;
         track.gain = clamp(gain, 0, 1);
       }),
-    })),
+    }));
+    get().emitEdit({
+      kind: "track/setGain",
+      cellId: get().selectedCellId,
+      trackId,
+      gain: clamp(gain, 0, 1),
+    });
+  },
 
-  toggleMute: (trackId) =>
+  toggleMute: (trackId) => {
     recordCommand(get, set, "toggle mute", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       if (track) track.muted = !track.muted;
-    }),
+    });
+    get().emitEdit({
+      kind: "track/toggleMute",
+      cellId: get().selectedCellId,
+      trackId,
+    });
+  },
 
-  toggleSolo: (trackId) =>
+  toggleSolo: (trackId) => {
     recordCommand(get, set, "toggle solo", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       if (track) track.soloed = !track.soloed;
-    }),
+    });
+    get().emitEdit({
+      kind: "track/toggleSolo",
+      cellId: get().selectedCellId,
+      trackId,
+    });
+  },
 
-  setBpm: (bpm) =>
+  setBpm: (bpm) => {
     set((s) => ({
       pattern: produce(s.pattern, (p) => {
         p.bpm = clamp(Math.round(bpm), BPM_MIN, BPM_MAX);
       }),
-    })),
+    }));
+    get().emitEdit({
+      kind: "pattern/setBpm",
+      bpm: clamp(Math.round(bpm), BPM_MIN, BPM_MAX),
+    });
+  },
 
-  setMasterGain: (gain) =>
+  setMasterGain: (gain) => {
     set((s) => ({
       pattern: produce(s.pattern, (p) => {
         p.masterGain = clamp(gain, 0, 1);
       }),
-    })),
+    }));
+    get().emitEdit({
+      kind: "pattern/setMasterGain",
+      gain: clamp(gain, 0, 1),
+    });
+  },
 
-  setEffectParam: (kind, key, value) =>
+  setEffectParam: (kind, key, value) => {
     set((s) => ({
       pattern: produce(s.pattern, (p) => {
         const effect = p.effects.find((e) => e.kind === kind);
         if (!effect) return;
         effect.params[key] = value;
       }),
-    })),
+    }));
+    get().emitEdit({
+      kind: "pattern/setEffectParam",
+      cellId: get().selectedCellId,
+      effectKind: kind,
+      key,
+      value,
+    });
+  },
 
-  toggleEffect: (kind) =>
+  toggleEffect: (kind) => {
     recordCommand(get, set, "toggle effect", (draft) => {
       const effect = draft.effects.find((e) => e.kind === kind);
       if (effect) effect.enabled = !effect.enabled;
-    }),
+    });
+    get().emitEdit({
+      kind: "pattern/toggleEffect",
+      cellId: get().selectedCellId,
+      effectKind: kind,
+    });
+  },
 
-  clearAllSteps: () =>
+  clearAllSteps: () => {
     recordCommand(get, set, "clear all steps", (draft) => {
       for (const track of draft.tracks) {
         for (const step of track.steps) {
@@ -224,7 +296,12 @@ export const createPatternSlice: StateCreator<
           delete step.sampleName;
         }
       }
-    }),
+    });
+    get().emitEdit({
+      kind: "pattern/clearAllSteps",
+      cellId: get().selectedCellId,
+    });
+  },
 
   setAllStepsOnTrack: (trackId, active) => {
     // Resolve the track's current sample once (used to pin the name on
@@ -252,6 +329,12 @@ export const createPatternSlice: StateCreator<
         }
       },
     );
+    get().emitEdit({
+      kind: "track/setAllSteps",
+      cellId: get().selectedCellId,
+      trackId,
+      active,
+    });
   },
 
   resetTrackMixer: (trackId) =>
@@ -263,7 +346,7 @@ export const createPatternSlice: StateCreator<
       track.soloed = false;
     }),
 
-  clearTrackSample: (trackId) =>
+  clearTrackSample: (trackId) => {
     recordCommand(get, set, "clear sample", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       if (!track) return;
@@ -280,7 +363,13 @@ export const createPatternSlice: StateCreator<
         delete step.sampleVersion;
         delete step.sampleName;
       }
-    }),
+    });
+    get().emitEdit({
+      kind: "track/clearSample",
+      cellId: get().selectedCellId,
+      trackId,
+    });
+  },
 
   setStepSample: (trackId, stepIndex, sampleId, sampleVersion) => {
     // Look up the canonical SampleRef so we can pin the name. If the
@@ -298,6 +387,15 @@ export const createPatternSlice: StateCreator<
       step.sampleId = sampleId;
       step.sampleVersion = sampleVersion;
       step.sampleName = sample?.name ?? null;
+    });
+    get().emitEdit({
+      kind: "matrix/setStepSample",
+      cellId: get().selectedCellId,
+      trackId,
+      step: stepIndex,
+      sampleId,
+      sampleVersion,
+      sampleName: sample?.name ?? null,
     });
   },
 });

@@ -241,6 +241,14 @@ export const createProjectSlice: StateCreator<
     const current = get().project.current;
     if (!current) return;
     if (!get().project.isLockOwner) return;
+    // While a live collab session is running, only the SESSION OWNER
+    // (which equals the project owner — sessions are owner-started)
+    // PATCHes Firestore. Other peers' edits travel through RTDB and
+    // get folded into the owner's next save. Without this, every peer
+    // would race to PATCH the same revision and trigger 409s.
+    const session = get().collab.session;
+    const myUid = get().auth.user?.id;
+    if (session.id && session.meta && session.meta.ownerUid !== myUid) return;
 
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {

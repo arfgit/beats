@@ -20,6 +20,13 @@ import { useSpaceToPlay } from "@/features/studio/useSpaceToPlay";
 import { useUndoShortcuts } from "@/features/studio/useUndoShortcuts";
 import { useDisarmOnEscape } from "@/features/studio/useDisarmOnEscape";
 import { ArmedBanner } from "@/features/studio/ArmedBanner";
+import {
+  PeerCursorOverlay,
+  SessionParticipantRail,
+} from "@/features/studio/PeerCursorOverlay";
+import { useCursorBroadcast } from "@/features/studio/useCursorBroadcast";
+import { SessionInviteDialog } from "@/features/studio/SessionInviteDialog";
+import { SessionJoinPrompt } from "@/features/studio/SessionJoinPrompt";
 
 export default function StudioRoute() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -47,6 +54,15 @@ export default function StudioRoute() {
   useSpaceToPlay();
   useUndoShortcuts();
   useDisarmOnEscape();
+  // Surface ref drives both local cursor broadcast (we report normalized
+  // [0,1] coords against this rect) and remote cursor projection (peers'
+  // normalized coords project back into this rect's pixel space). Same
+  // element on both sides keeps everyone's cursor at the same logical
+  // spot regardless of viewport size.
+  const cursorSurfaceRef = useRef<HTMLDivElement>(null);
+  useCursorBroadcast(cursorSurfaceRef);
+  const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
+  const liveSessionId = useBeatsStore((s) => s.collab.session.id);
 
   const tabIdRef = useRef<string>(nanoid(8));
 
@@ -125,7 +141,8 @@ export default function StudioRoute() {
           </button>
         </div>
       )}
-      <div className="space-y-6">
+      <div ref={cursorSurfaceRef} className="space-y-6 relative">
+        <PeerCursorOverlay surface={cursorSurfaceRef} />
         <header className="flex items-end justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-ink text-lg tracking-[0.3em] uppercase font-normal">
@@ -136,7 +153,40 @@ export default function StudioRoute() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            <SessionParticipantRail />
             <PeerCursors />
+            {authedUid && (
+              <Tooltip
+                label={
+                  liveSessionId
+                    ? "manage live session"
+                    : "start a live collab session"
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => setSessionDialogOpen(true)}
+                  aria-label="live session"
+                  className={clsx(
+                    "h-8 px-3 rounded border text-[10px] uppercase tracking-widest font-mono transition-colors duration-150 motion-reduce:transition-none flex items-center gap-1.5",
+                    liveSessionId
+                      ? "border-neon-green text-neon-green bg-neon-green/10 hover:bg-neon-green/20"
+                      : "border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className={clsx(
+                      "inline-block h-1.5 w-1.5 rounded-full",
+                      liveSessionId
+                        ? "bg-neon-green animate-pulse"
+                        : "bg-ink-muted",
+                    )}
+                  />
+                  {liveSessionId ? "live" : "go live"}
+                </button>
+              </Tooltip>
+            )}
             {audioReady ? (
               <span
                 className="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest text-ink-muted"
@@ -266,6 +316,11 @@ export default function StudioRoute() {
         </section>
         <RecorderPanel />
       </div>
+      <SessionInviteDialog
+        open={sessionDialogOpen}
+        onClose={() => setSessionDialogOpen(false)}
+      />
+      <SessionJoinPrompt />
     </div>
   );
 }
