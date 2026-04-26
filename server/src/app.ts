@@ -42,16 +42,22 @@ export function createApp() {
   app.use(
     cors({
       origin: (origin, cb) => {
-        const allowed = (
-          process.env.CORS_ORIGINS ??
-          [
-            "http://localhost:5173",
-            "http://localhost:5000",
-            "https://beats-prod-ant.web.app",
-            "https://beats-prod-ant.firebaseapp.com",
-          ].join(",")
-        ).split(",");
-        if (!origin || allowed.includes(origin)) return cb(null, true);
+        // Canonical URLs are always allowed regardless of `CORS_ORIGINS`
+        // env state — if a stale env var omits one of these (we have hit
+        // this) the deployed app still works. CORS_ORIGINS adds extras
+        // (preview channels, alt domains) on top of the canonical set.
+        const canonical = [
+          "http://localhost:5173",
+          "http://localhost:5000",
+          "https://beats-prod-ant.web.app",
+          "https://beats-prod-ant.firebaseapp.com",
+        ];
+        const fromEnv = (process.env.CORS_ORIGINS ?? "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const allowed = new Set([...canonical, ...fromEnv]);
+        if (!origin || allowed.has(origin)) return cb(null, true);
         cb(new Error("CORS blocked"));
       },
       credentials: true,
