@@ -13,6 +13,19 @@ import { logger } from "../lib/logger.js";
 function init() {
   if (getApps().length > 0) return;
 
+  // Detect managed runtimes (Cloud Functions gen 2 / Cloud Run) BEFORE
+  // we look at GOOGLE_APPLICATION_CREDENTIALS. If the deploying machine's
+  // .env file got shipped with that path (which Firebase CLI does by
+  // default — it loads .env values onto the function's runtime env),
+  // the SDK would try to read a file that doesn't exist in the
+  // container and crash with ENOENT before any handler runs. The
+  // metadata server is the right credential source in managed runtimes
+  // anyway, so we deliberately ignore the file-path var there.
+  const isInManagedRuntime =
+    !!process.env.FUNCTION_TARGET || !!process.env.K_SERVICE;
+  if (isInManagedRuntime) {
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  }
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   const projectId =
     process.env.GCLOUD_PROJECT ??
@@ -31,13 +44,6 @@ function init() {
   const databaseURL =
     process.env.FIREBASE_DATABASE_URL ??
     `https://${projectId}-default-rtdb.firebaseio.com`;
-  // In the Firebase Functions gen-2 / Cloud Run runtime, credentials come
-  // from the attached service account via the metadata server — no env var
-  // is set, and `applicationDefault()` discovers them automatically. Detect
-  // the runtime so we don't require the dev-only GOOGLE_APPLICATION_CREDENTIALS.
-  const isInManagedRuntime =
-    !!process.env.FUNCTION_TARGET || !!process.env.K_SERVICE;
-
   if (serviceAccountJson) {
     initializeApp({
       credential: cert(JSON.parse(serviceAccountJson)),
