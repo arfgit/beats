@@ -73,6 +73,17 @@ function freshBuddy(): BuddySlice["buddy"] {
   };
 }
 
+/**
+ * Per-buddy online listener teardowns. Lives in module scope rather
+ * than inside the buddy state so we don't have to attach `onValue`
+ * inside a Zustand `set` reducer. RTDB delivers cached data
+ * synchronously to the freshly-attached handler, which would call
+ * `set` again, nesting one set inside another — a known footgun in
+ * Zustand + React 18 useSyncExternalStore that surfaces as React
+ * error #185 in production builds.
+ */
+let onlineDetachByUid = new Map<string, () => void>();
+
 export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
   set,
   get,
@@ -196,8 +207,15 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
 
     const detach: Array<() => void> = [];
 
-    // 1. Buddies subcollection — populates the buddies list + drives
-    //    the per-buddy online listeners below.
+    // 1. Buddies subcollection. Two separate phases avoid nesting a
+    //    `set` inside another `set` reducer:
+    //    (a) commit the new buddies map + reconciled onlineUids in
+    //        ONE `set` call.
+    //    (b) AFTER the set returns, attach/detach the per-buddy RTDB
+    //        online listeners. RTDB fires the handler synchronously
+    //        with cached data; if we did this inside the reducer that
+    //        callback would call `set` while the outer set is still
+    //        running, which trips React #185 in production builds.
     const buddiesUnsub: FirestoreUnsub = onSnapshot(
       collection(db, `users/${uid}/buddies`),
       (snap) => {
@@ -208,58 +226,48 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
           next[docSnap.id] = data;
           seenUids.add(docSnap.id);
         }
+        // (a) commit buddies + filtered onlineUids
         set((s) => {
-          // Reconcile online listeners: subscribe to new buddies, drop
-          // detach for removed ones. The detach array carries closure
-          // pointers we wrote when we first subscribed.
-          const onlineDetachByUid =
-            (s.buddy as { _onlineDetach?: Record<string, () => void> })
-              ._onlineDetach ?? {};
-          const stillOnline: Record<string, true> = {};
-          for (const otherUid of Object.keys(onlineDetachByUid)) {
-            if (!seenUids.has(otherUid)) {
-              try {
-                onlineDetachByUid[otherUid]!();
-              } catch {
-                // ignore
-              }
-              delete onlineDetachByUid[otherUid];
-            } else if (s.buddy.onlineUids[otherUid]) {
-              stillOnline[otherUid] = true;
-            }
-          }
-          for (const otherUid of seenUids) {
-            if (!onlineDetachByUid[otherUid]) {
-              const onlineRef = dbRef(rtdb, `users/${otherUid}/online`);
-              const handler = (online: DataSnapshot) => {
-                const val = online.val() as {
-                  tabs?: Record<string, true>;
-                } | null;
-                const isOnline =
-                  !!val && !!val.tabs && Object.keys(val.tabs).length > 0;
-                set((inner) => {
-                  const onlines = { ...inner.buddy.onlineUids };
-                  if (isOnline) onlines[otherUid] = true;
-                  else delete onlines[otherUid];
-                  return {
-                    buddy: { ...inner.buddy, onlineUids: onlines },
-                  };
-                });
-              };
-              onValue(onlineRef, handler);
-              onlineDetachByUid[otherUid] = () =>
-                off(onlineRef, "value", handler);
-            }
+          const filtered: Record<string, true> = {};
+          for (const u of seenUids) {
+            if (s.buddy.onlineUids[u]) filtered[u] = true;
           }
           return {
-            buddy: {
-              ...s.buddy,
-              buddies: next,
-              onlineUids: stillOnline,
-              _onlineDetach: onlineDetachByUid,
-            } as BuddySlice["buddy"],
+            buddy: { ...s.buddy, buddies: next, onlineUids: filtered },
           };
         });
+        // (b) reconcile per-buddy listeners outside the reducer
+        for (const [u, detachFn] of onlineDetachByUid) {
+          if (!seenUids.has(u)) {
+            try {
+              detachFn();
+            } catch {
+              // ignore
+            }
+            onlineDetachByUid.delete(u);
+          }
+        }
+        for (const otherUid of seenUids) {
+          if (onlineDetachByUid.has(otherUid)) continue;
+          const onlineRef = dbRef(rtdb, `users/${otherUid}/online`);
+          const handler = (online: DataSnapshot) => {
+            const val = online.val() as { tabs?: Record<string, true> } | null;
+            const isOnline =
+              !!val && !!val.tabs && Object.keys(val.tabs).length > 0;
+            set((inner) => {
+              const cur = inner.buddy.onlineUids[otherUid] ? true : false;
+              if (cur === isOnline) return inner; // <-- short-circuit no-op writes
+              const onlines = { ...inner.buddy.onlineUids };
+              if (isOnline) onlines[otherUid] = true;
+              else delete onlines[otherUid];
+              return { buddy: { ...inner.buddy, onlineUids: onlines } };
+            });
+          };
+          onValue(onlineRef, handler);
+          onlineDetachByUid.set(otherUid, () =>
+            off(onlineRef, "value", handler),
+          );
+        }
       },
     );
     detach.push(() => buddiesUnsub());
@@ -329,18 +337,14 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
         // ignore
       }
     }
-    const onlineDetach = (
-      state as { _onlineDetach?: Record<string, () => void> }
-    )._onlineDetach;
-    if (onlineDetach) {
-      for (const fn of Object.values(onlineDetach)) {
-        try {
-          fn();
-        } catch {
-          // ignore
-        }
+    for (const fn of onlineDetachByUid.values()) {
+      try {
+        fn();
+      } catch {
+        // ignore
       }
     }
+    onlineDetachByUid = new Map();
     detachGlobalPresence();
     set(() => ({ buddy: freshBuddy() }));
   },

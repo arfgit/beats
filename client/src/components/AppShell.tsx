@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { useRouteTracker } from "@/lib/useRouteTracker";
 import { IncomingInviteToast } from "@/features/buddy/IncomingInviteToast";
+import { BuddyDrawer } from "@/features/buddy/BuddyDrawer";
 import { Button } from "./ui/Button";
 
 interface NavItem {
@@ -30,6 +31,12 @@ export function AppShell() {
   const isAuthed = status === "authed" && !!user;
   const visibleNavItems = navItems.filter(
     (item) => !item.requiresAuth || isAuthed,
+  );
+  const [buddyDrawerOpen, setBuddyDrawerOpen] = useState(false);
+  const incomingRequestCount = useBeatsStore(
+    (s) =>
+      Object.values(s.buddy.requests).filter((r) => r.direction === "incoming")
+        .length,
   );
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -257,6 +264,27 @@ export function AppShell() {
                   {user.displayName}
                 </span>
                 <BuddyCodeChip />
+                <Button
+                  variant="ghost"
+                  onClick={() => setBuddyDrawerOpen(true)}
+                  aria-label={
+                    incomingRequestCount > 0
+                      ? `buddies (${incomingRequestCount} pending)`
+                      : "buddies"
+                  }
+                >
+                  <span className="flex items-center justify-between gap-2 w-full">
+                    <span>buddies</span>
+                    {incomingRequestCount > 0 && (
+                      <span
+                        aria-hidden
+                        className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-neon-violet text-bg-void text-[10px] font-mono font-medium"
+                      >
+                        {incomingRequestCount}
+                      </span>
+                    )}
+                  </span>
+                </Button>
                 <Button variant="ghost" onClick={() => void signOut()}>
                   sign out
                 </Button>
@@ -294,6 +322,10 @@ export function AppShell() {
         <Outlet />
       </main>
       <IncomingInviteToast />
+      <BuddyDrawer
+        open={buddyDrawerOpen}
+        onClose={() => setBuddyDrawerOpen(false)}
+      />
       <BuddyNavigationBridge />
     </div>
   );
