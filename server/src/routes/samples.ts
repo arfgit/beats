@@ -264,14 +264,24 @@ router.delete(
         return next(ForbiddenError("built-in samples cannot be deleted"));
       }
 
-      await Promise.all([
-        storage
+      await ref.delete();
+      // Refcount-aware blob delete. After fork, multiple sample docs
+      // can point at the same storagePath (cloneSamplesForFork reuses
+      // the blob to avoid storage duplication). Only delete the blob
+      // when THIS doc was the last reference — otherwise the fork's
+      // copies would suddenly 404 on the next download-url sign.
+      const survivors = await db
+        .collection("samples")
+        .where("storagePath", "==", sample.storagePath)
+        .limit(1)
+        .get();
+      if (survivors.empty) {
+        await storage
           .bucket()
           .file(sample.storagePath)
           .delete()
-          .catch(() => undefined),
-        ref.delete(),
-      ]);
+          .catch(() => undefined);
+      }
       await releaseQuotaSlot(uid, sample.originalSizeBytes ?? 0).catch(
         () => undefined,
       );

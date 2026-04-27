@@ -2,7 +2,8 @@ import { Router, type NextFunction, type Response } from "express";
 import { nanoid } from "nanoid";
 import type { Project, ProjectMatrix, SampleRef } from "@beats/shared";
 import { isProjectMatrix } from "@beats/shared";
-import { db } from "../services/firebase-admin.js";
+import { db, storage } from "../services/firebase-admin.js";
+import { releaseQuotaSlot } from "../services/samples-service.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import {
   ConflictError,
@@ -152,13 +153,73 @@ router.delete(
   requireAuth,
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
-      const ref = db.collection("projects").doc(req.params.id!);
+      const projectId = req.params.id!;
+      const ref = db.collection("projects").doc(projectId);
       const snap = await ref.get();
       if (!snap.exists) return next(NotFoundError("project not found"));
       const project = snap.data() as Project;
       if (project.ownerId !== req.auth!.uid)
         return next(ForbiddenError("owner only"));
-      await ref.delete();
+      // Cascade: delete every sample doc rigged to this project so we
+      // don't leave orphans in Firestore (they'd otherwise consume
+      // quota forever and never be reachable through the picker).
+      // Refcount-aware blob delete: only nuke the storage object when
+      // no remaining sample doc references it (fork copies share the
+      // path with the original to avoid storage duplication).
+      const sampleSnap = await db
+        .collection("samples")
+        .where("projectId", "==", projectId)
+        .get();
+      const cascadePaths: string[] = [];
+      const cascadeIds: string[] = [];
+      const releaseTasks: Array<{ uid: string; size: number }> = [];
+      // Collect first so the survivor query below sees the
+      // post-delete state.
+      const batch = db.batch();
+      for (const doc of sampleSnap.docs) {
+        const sample = doc.data() as SampleRef & {
+          originalSizeBytes?: number;
+        };
+        if (sample.isBuiltIn) continue;
+        cascadeIds.push(doc.id);
+        cascadePaths.push(sample.storagePath);
+        if (sample.ownerId) {
+          releaseTasks.push({
+            uid: sample.ownerId,
+            size: sample.originalSizeBytes ?? 0,
+          });
+        }
+        batch.delete(doc.ref);
+      }
+      batch.delete(ref);
+      await batch.commit();
+
+      // Best-effort cleanup of orphan blobs + quota slots. We don't
+      // fail the request if these falter — the doc cascade is the
+      // important contract; storage GC is an optimization.
+      const uniquePaths = Array.from(new Set(cascadePaths));
+      await Promise.all(
+        uniquePaths.map(async (path) => {
+          const survivors = await db
+            .collection("samples")
+            .where("storagePath", "==", path)
+            .limit(1)
+            .get();
+          if (survivors.empty) {
+            await storage
+              .bucket()
+              .file(path)
+              .delete()
+              .catch(() => undefined);
+          }
+        }),
+      );
+      await Promise.all(
+        releaseTasks.map((task) =>
+          releaseQuotaSlot(task.uid, task.size).catch(() => undefined),
+        ),
+      );
+      void cascadeIds; // future telemetry hook
       res.json({ data: { ok: true } });
     } catch (err) {
       next(err);
