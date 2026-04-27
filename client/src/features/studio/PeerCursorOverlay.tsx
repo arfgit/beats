@@ -93,65 +93,95 @@ function PeerCursor({
   // size can change with sidebar toggles, viewport resize, and we want
   // peer cursors to track those changes immediately.
   const rect = surface?.getBoundingClientRect();
-  const surfaceTop = rect?.top ?? 0;
-  const surfaceLeft = rect?.left ?? 0;
   const width = rect?.width ?? 0;
   const height = rect?.height ?? 0;
   const px = cursor.x * width;
   const py = cursor.y * height;
 
-  // The overlay div is `absolute inset-0` over the surface so we can
-  // position cursors in the surface's local space — translate3d here
-  // is just (px, py) within the overlay, not page coords. Subtracting
-  // the surface's own top/left isn't needed.
-  void surfaceTop;
-  void surfaceLeft;
+  // White text on bright backgrounds is unreadable, dark text on dark
+  // ones is too. Pick a contrasting label text color from the cursor
+  // color's perceived luminance — same trick Figma uses on user chips.
+  const labelTextColor = readableTextColor(cursor.color);
 
   return (
     <div
       className="absolute top-0 left-0 will-change-transform"
       style={{
         transform: `translate3d(${px}px, ${py}px, 0)`,
-        transition: "transform 100ms linear",
+        // Faster than 100ms feels twitchy; slower glides too much when
+        // the peer moves quickly. 80ms matches Figma's perceived feel
+        // for their typical 30-50ms presence cadence — at our 100ms
+        // throttle, slightly under the tick interval keeps the cursor
+        // catching up rather than lagging.
+        transition: "transform 80ms linear",
       }}
     >
       <CursorArrow color={cursor.color} />
-      <div
-        className="ml-3 mt-[-2px] inline-block px-1.5 py-0.5 rounded-sm text-[10px] font-mono uppercase tracking-widest text-bg-void whitespace-nowrap"
+      <span
+        className="absolute left-3.5 top-3.5 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium tracking-tight whitespace-nowrap leading-tight"
         style={{
           backgroundColor: cursor.color,
-          boxShadow: `0 0 8px ${cursor.color}`,
+          color: labelTextColor,
+          boxShadow: "0 1px 2px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,0,0,0.15)",
         }}
       >
         {cursor.name}
-      </div>
+      </span>
     </div>
   );
 }
 
 /**
- * 14×16 SVG arrow. Filled triangle with a subtle inner outline so it
- * stays readable on both light + dark backgrounds. The shape mirrors
- * macOS / Figma cursor proportions more than the chunkier Windows one.
+ * Slim Figma-style arrow. The shape: a tall narrow triangle leaning
+ * ~30° to the right, with a subtle white outline so it stays readable
+ * over both dark and light backgrounds. Drop shadow gives it lift.
+ *
+ * The geometry below traces a "real" pointer: tip at (3, 2), heel
+ * curving to the bottom, exit-tail to the lower-right. Mirrors the
+ * proportions Figma + macOS use rather than the chunkier OS-default
+ * Windows arrow.
  */
 function CursorArrow({ color }: { color: string }) {
   return (
     <svg
-      width="14"
-      height="16"
-      viewBox="0 0 14 16"
+      width="22"
+      height="22"
+      viewBox="0 0 22 22"
       xmlns="http://www.w3.org/2000/svg"
-      style={{ filter: `drop-shadow(0 0 4px ${color}80)` }}
+      style={{
+        filter:
+          "drop-shadow(0 1px 2px rgba(0,0,0,0.4)) drop-shadow(0 0 0.5px rgba(0,0,0,0.6))",
+      }}
+      aria-hidden
     >
       <path
-        d="M0 0 L0 13 L4 9.5 L6.5 15 L9 14 L6.5 8.5 L11 8 Z"
+        d="M3 2 L3 16.5 L7.2 12.6 L9.6 18.2 L12 17.1 L9.5 11.5 L14.5 11 Z"
         fill={color}
-        stroke="rgba(0,0,0,0.5)"
-        strokeWidth="0.6"
+        stroke="#ffffff"
+        strokeWidth="1.5"
         strokeLinejoin="round"
+        strokeLinecap="round"
       />
     </svg>
   );
+}
+
+/**
+ * Pick #fff or #000 for label text based on the background color's
+ * perceived luminance. Uses the WCAG relative-luminance formula on the
+ * sRGB channels — same metric Figma's user-chip pill uses.
+ */
+function readableTextColor(hex: string): string {
+  const m = hex.match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return "#ffffff";
+  const v = parseInt(m[1]!, 16);
+  const r = ((v >> 16) & 0xff) / 255;
+  const g = ((v >> 8) & 0xff) / 255;
+  const b = (v & 0xff) / 255;
+  const lum = (c: number) =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const L = 0.2126 * lum(r) + 0.7152 * lum(g) + 0.0722 * lum(b);
+  return L > 0.55 ? "#0a0518" : "#ffffff";
 }
 
 /**

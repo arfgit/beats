@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import clsx from "clsx";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { TRACK_KINDS, type TrackKind } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { startPatternBridge } from "@/audio/bridge";
@@ -30,6 +30,17 @@ import { SessionJoinPrompt } from "@/features/studio/SessionJoinPrompt";
 
 export default function StudioRoute() {
   const { projectId } = useParams<{ projectId?: string }>();
+  const location = useLocation();
+  // Detect a session-join URL up front. When `?session=<id>` is present
+  // we DEFER project hydration: the invitee almost certainly isn't on
+  // the project's collaborator list, and a Firestore onSnapshot to a
+  // project they can't read fires `permission-denied` in a loop until
+  // the listener is detached. Let `SessionJoinPrompt` → `joinSession`
+  // hydrate state via the server response + RTDB listeners instead.
+  const joiningSessionId = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("session");
+  }, [location.search]);
   const audioReady = useBeatsStore((s) => s.transport.audioReady);
   const priming = useBeatsStore((s) => s.transport.priming);
   const lastAudioError = useBeatsStore((s) => s.transport.lastError);
@@ -78,11 +89,20 @@ export default function StudioRoute() {
 
   useEffect(() => {
     let lock: MultiTabLock | null = null;
-    if (projectId) {
+    if (projectId && !joiningSessionId) {
       void loadProject(projectId);
       lock = acquireLock(projectId, tabIdRef.current);
       lock.onChange(setLockOwner);
       if (authedUid) startCollab(projectId);
+    } else if (projectId && joiningSessionId) {
+      // Joining a session: the invitee may not have project read
+      // access. Skip Firestore hydration entirely; the join handler
+      // returns the canonical state from the server (which uses
+      // Admin SDK creds) and the RTDB listeners take over from there.
+      // We still acquire the multi-tab lock so two tabs of the same
+      // user don't both broadcast cursor + presence.
+      lock = acquireLock(projectId, tabIdRef.current);
+      lock.onChange(setLockOwner);
     } else {
       // Restore any unsaved anon work from the previous session before
       // clearing project-level state. rehydrate is a no-op when no cache
@@ -99,6 +119,7 @@ export default function StudioRoute() {
     };
   }, [
     projectId,
+    joiningSessionId,
     authedUid,
     loadProject,
     clearProject,
