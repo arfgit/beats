@@ -43,10 +43,19 @@ export function SaveShareBar() {
   const navigate = useNavigate();
   const [forking, setForking] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // Only treat the bar as "live" when this tab is actually viewing
+  // the session's project. Without this gate the live banner stays
+  // pinned even when the user clicks a different project — they're
+  // not really live ON that project, they just happen to have a
+  // session attached to a different one.
+  const sessionMatchesLoadedProject =
+    !!sessionMeta && !!project && sessionMeta.projectId === project.id;
+  const sessionAffectsThisView =
+    !!sessionId && (sessionMatchesLoadedProject || !project);
   const isInviteeInSession =
-    !!sessionId && !!sessionMeta && sessionMeta.ownerUid !== myUid;
+    sessionAffectsThisView && !!sessionMeta && sessionMeta.ownerUid !== myUid;
   const isHostInSession =
-    !!sessionId && !!sessionMeta && sessionMeta.ownerUid === myUid;
+    sessionAffectsThisView && !!sessionMeta && sessionMeta.ownerUid === myUid;
   const inviteesCanEditGlobal =
     sessionMeta?.permissions?.inviteesCanEditGlobal ??
     DEFAULT_SESSION_PERMISSIONS.inviteesCanEditGlobal;

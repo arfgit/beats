@@ -1,6 +1,7 @@
 import {
   cloneElement,
   isValidElement,
+  useEffect,
   useId,
   useRef,
   useState,
@@ -111,6 +112,56 @@ export function Tooltip({
     setOpen(true);
   };
   const hide = () => setOpen(false);
+
+  // Stale-tooltip hardening. Tooltips sometimes get stuck on screen
+  // when:
+  //  1. The trigger unmounts while hovered (mouseleave never fires).
+  //  2. The user scrolls — the cached coords no longer match the
+  //     trigger's screen position.
+  //  3. The tab loses focus / visibility flips.
+  //  4. The trigger moves under another stacked element and the
+  //     pointer crosses out without firing leave on the right node.
+  // Add a cleanup pass while open: hide on scroll, blur, visibility
+  // hidden, and on unmount. Cheap (only attached when open).
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = () => setOpen(false);
+    const onBlur = () => setOpen(false);
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") setOpen(false);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      const trigger = triggerRef.current;
+      if (!trigger) {
+        setOpen(false);
+        return;
+      }
+      const rect = trigger.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (!inside) setOpen(false);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("pointermove", onPointerMove);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("pointermove", onPointerMove);
+    };
+  }, [open]);
+
+  // Belt-and-suspenders: when the consumer unmounts the trigger
+  // (route change, list re-render, etc.) while the tooltip is open,
+  // close it on our own unmount.
+  useEffect(() => {
+    return () => setOpen(false);
+  }, []);
 
   if (!isValidElement(children)) return children;
 

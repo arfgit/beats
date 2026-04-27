@@ -89,12 +89,12 @@ export function MatrixGrid() {
     for (const [uid, p] of Object.entries(sessionPresence)) {
       if (uid === myUid) continue;
       if (!p?.focus?.cellId) continue;
-      // Treat the participants list as the source of truth for "is
-      // this peer in the session right now". The lastSeen filter
-      // (15s window) only kicks out ghost records that linger after
-      // an ungraceful disconnect — onDisconnect should clean those
-      // up, but we defend against the rare edge case anyway.
-      if (!sessionParticipants[uid]) continue;
+      // Race guard: the presence onValue can deliver a peer's record
+      // before the participants onValue has hydrated, so we DON'T
+      // require participants[uid] to exist here. RTDB rules already
+      // gate /presence writes on participant membership, so anyone
+      // appearing in /presence is a real session participant. The
+      // lastSeen freshness check is the actual liveness signal.
       if (now - (p.lastSeen ?? 0) > 15_000) continue;
       const participant = sessionParticipants[uid];
       const color = participant?.color ?? p.color ?? "#b84dff";

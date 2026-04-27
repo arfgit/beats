@@ -140,6 +140,15 @@ export const createTransportSlice: StateCreator<
               lastError: null,
             },
           }));
+          // Catch-up: if a remote `transport/play` landed before this
+          // peer had primed audio, the apply path optimistically set
+          // `isPlaying: true` to keep the UI in sync but couldn't
+          // actually start the matrix controller. Now that the engine
+          // is ready, start it so playback engages.
+          if (get().transport.isPlaying) {
+            get().syncPatternIntoMatrix();
+            ensureMatrixController().start();
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           set((s) => ({

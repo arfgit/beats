@@ -246,11 +246,26 @@ function ParticipantChip({
           opacity: isOnline ? 1 : 0.4,
         }}
       />
-      <span style={{ color: p.color, opacity: isOnline ? 1 : 0.5 }}>
-        {p.displayName}
-      </span>
+      {isMe ? (
+        <span style={{ color: p.color, opacity: isOnline ? 1 : 0.5 }}>
+          {p.displayName}
+        </span>
+      ) : (
+        // Click opens the participant's public profile in a new tab.
+        // Uses a real anchor (target=_blank + rel) instead of a route
+        // push so the jam stays in the foreground tab.
+        <a
+          href={`/profile/${encodeURIComponent(p.uid)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`open ${p.displayName}'s profile in a new tab`}
+          className="hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current rounded-sm"
+          style={{ color: p.color, opacity: isOnline ? 1 : 0.5 }}
+        >
+          {p.displayName}
+        </a>
+      )}
       {isMe && <span className="text-ink-muted">(you)</span>}
-      {p.role === "viewer" && <span className="text-ink-muted">view</span>}
     </li>
   );
 }

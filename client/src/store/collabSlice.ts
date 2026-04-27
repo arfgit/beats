@@ -497,16 +497,29 @@ function attachSessionListeners(
     }, 4000);
     detach.push(() => clearInterval(heartbeat));
 
-    // Best-effort cleanup on disconnect (closed tab / dropped network)
-    // so a peer's presence record doesn't ghost on the matrix forever.
-    // Server still owns participant removal via /sessions/:id/leave.
+    // Best-effort cleanup on disconnect (closed tab / dropped network /
+    // browser kill). Cleans BOTH the presence record AND the participant
+    // slot so an offline peer doesn't keep counting against the room
+    // cap and doesn't keep ghosting in everyone else's session UI.
+    // "Offline" here means the websocket dropped — tab-switching or
+    // backgrounding does not trigger onDisconnect.
     const disconnect = onDisconnect(presenceSelfRef);
     void disconnect.remove();
+    const participantSelfRef = dbRef(
+      rtdb,
+      `sessions/${sessionId}/participants/${myUid}`,
+    );
+    const participantDisconnect = onDisconnect(participantSelfRef);
+    void participantDisconnect.remove();
     detach.push(() => {
       void disconnect.cancel();
-      // Manual remove on intentional leave — onDisconnect only fires on
-      // ungraceful disconnects.
+      void participantDisconnect.cancel();
+      // Manual remove on intentional leave — onDisconnect only fires
+      // on ungraceful disconnects. The /sessions/:id/leave server call
+      // also removes participant from its side, so this is belt-and-
+      // suspenders against the server call failing.
       void dbRemove(presenceSelfRef);
+      void dbRemove(participantSelfRef);
     });
   }
 

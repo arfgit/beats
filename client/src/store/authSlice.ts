@@ -65,7 +65,6 @@ export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
     // changes, so onIdTokenChanged's first emission sees the signed-in user
     // rather than firing with null and triggering a 401 on /api/auth/session.
     const ready = getRedirectResult(auth).catch((err) => {
-       
       console.warn("[auth] getRedirectResult failed", err);
       return null;
     });
@@ -154,6 +153,18 @@ export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
   },
 
   signOut: async () => {
+    // Drop out of any live session before tearing down the auth.
+    // Without this, the participant slot lingers (until the websocket
+    // disconnects via onDisconnect, which is unreliable on a clean
+    // sign-out where the page stays open) and other peers continue
+    // to render the user's chip as if they were still in the room.
+    if (get().collab.session.id) {
+      try {
+        await get().leaveSession();
+      } catch {
+        // Best-effort — proceed with sign-out either way.
+      }
+    }
     // onIdTokenChanged fires with null right after; state transitions to
     // "anon" from there. No manual reset needed.
     await fbSignOut(auth);

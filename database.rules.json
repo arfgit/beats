@@ -37,7 +37,10 @@
         ".write": false,
 
         "meta": {
-          ".write": false
+          ".write": false,
+          "projectTitle": {
+            ".write": "auth != null && root.child('sessions').child($sessionId).child('meta').child('ownerUid').val() == auth.uid"
+          }
         },
 
         "state": {

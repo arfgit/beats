@@ -436,6 +436,29 @@ export const createProjectSlice: StateCreator<
         { headers: { "If-Match": String(current.revision) } },
       );
       set((s) => ({ project: { ...s.project, current: updated } }));
+      // If the host is in a live session on this project, mirror the
+      // new title into the session meta so invitees' guest banner
+      // updates in real time. RTDB rules allow only the session owner
+      // to write meta/projectTitle.
+      const session = get().collab.session;
+      const myUid = get().auth.user?.id ?? null;
+      if (
+        session.id &&
+        session.meta &&
+        session.meta.projectId === current.id &&
+        session.meta.ownerUid === myUid
+      ) {
+        try {
+          const { ref: dbRef, set: dbSet } = await import("firebase/database");
+          const { rtdb } = await import("@/lib/firebase");
+          await dbSet(
+            dbRef(rtdb, `sessions/${session.id}/meta/projectTitle`),
+            updated.title,
+          );
+        } catch (err) {
+          console.warn("[collab] mirror title to session failed", err);
+        }
+      }
     } catch (err) {
       const message =
         err instanceof ApiCallError ? err.apiError.message : "update failed";

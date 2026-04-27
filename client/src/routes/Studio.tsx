@@ -54,6 +54,7 @@ export default function StudioRoute() {
   const selectedCellId = useBeatsStore((s) => s.selectedCellId);
   const syncPatternIntoMatrix = useBeatsStore((s) => s.syncPatternIntoMatrix);
   const loadCellIntoPattern = useBeatsStore((s) => s.loadCellIntoPattern);
+  const resetMatrix = useBeatsStore((s) => s.resetMatrix);
   const [newRowKind, setNewRowKind] = useState<TrackKind>("drums");
   const [mixerOpen, setMixerOpen] = useState(true);
   const loadProject = useBeatsStore((s) => s.loadProject);
@@ -180,9 +181,14 @@ export default function StudioRoute() {
       lock = acquireLock(projectId, tabIdRef.current);
       lock.onChange(setLockOwner);
     } else {
-      // Restore any unsaved anon work from the previous session before
-      // clearing project-level state. rehydrate is a no-op when no cache
-      // exists, so a fresh visit still starts from defaults.
+      // Hard-reset matrix + pattern so beats from a previously-loaded
+      // project don't bleed into the fresh studio. Without this,
+      // /studio/A -> / inherits A's grid even though the user expected
+      // a clean slate. After reset, attempt to rehydrate any anon
+      // local-only work; if there's no cache, the user starts from
+      // defaults.
+      resetMatrix();
+      loadCellIntoPattern(useBeatsStore.getState().selectedCellId);
       rehydrateFromLocalCache();
       clearProject();
       setLockOwner(true);
@@ -202,6 +208,8 @@ export default function StudioRoute() {
     setLockOwner,
     startCollab,
     stopCollab,
+    resetMatrix,
+    loadCellIntoPattern,
   ]);
 
   useEffect(() => {
