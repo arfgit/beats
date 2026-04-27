@@ -8,11 +8,26 @@
         },
         "incomingInvites": {
           ".read": "auth != null && auth.uid == $uid",
-          ".write": false
+          ".write": false,
+          "$inviteId": {
+            // Recipient can delete (mark consumed) but cannot create or
+            // overwrite. `!newData.exists()` says "the after-state is
+            // empty," i.e. this is a delete. Writes (newData.exists())
+            // stay server-only via Admin SDK. Without this, the client
+            // dbRemove() lands in a Firebase optimistic-write loop:
+            // local cache flips to gone, onValue re-fires, server
+            // rejects the delete, cache reverts, onValue re-fires
+            // again, handler retries the delete, infinite toasts.
+            ".write": "auth != null && auth.uid == $uid && !newData.exists()"
+          }
         },
         "inviteEvents": {
           ".read": "auth != null && auth.uid == $uid",
-          ".write": false
+          ".write": false,
+          "$eventId": {
+            // Same recipient-can-delete-but-not-write contract as above.
+            ".write": "auth != null && auth.uid == $uid && !newData.exists()"
+          }
         }
       }
     },

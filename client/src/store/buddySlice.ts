@@ -84,6 +84,16 @@ function freshBuddy(): BuddySlice["buddy"] {
  */
 let onlineDetachByUid = new Map<string, () => void>();
 
+/**
+ * Event IDs we've already toasted. Belt-and-suspenders against
+ * RTDB optimistic-write loops: if `dbRemove` is denied by rules,
+ * Firebase reverts the local cache and re-fires onValue with the
+ * same data, which would re-toast forever. Tracking toasted IDs
+ * keeps the toast count at one per event no matter how many times
+ * the listener re-fires.
+ */
+let toastedEventIds = new Set<string>();
+
 export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
   set,
   get,
@@ -299,12 +309,26 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
     onValue(invitesRef, invitesHandler);
     detach.push(() => off(invitesRef, "value", invitesHandler));
 
-    // 4. Sender-side decline / busy / accepted events.
+    // 4. Sender-side decline / busy / accepted events. Two-pronged
+    //    defense against RTDB optimistic-write loops: a dedup Set
+    //    here keeps a single toast per eventId regardless of how
+    //    many times the listener re-fires for the same data, AND
+    //    the rules now permit recipient-deletes so dbRemove actually
+    //    succeeds (clearing the event for good).
     const eventsRef = dbRef(rtdb, `users/${uid}/inviteEvents`);
     const eventsHandler = (snap: DataSnapshot) => {
       const raw =
         (snap.val() as Record<string, InviteDeclineEvent> | null) ?? {};
       for (const [eventId, event] of Object.entries(raw)) {
+        if (toastedEventIds.has(eventId)) {
+          // Already shown — just retry the delete in case rules were
+          // previously denying. dbRemove is idempotent on missing.
+          void dbRemove(
+            dbRef(rtdb, `users/${uid}/inviteEvents/${eventId}`),
+          ).catch(() => undefined);
+          continue;
+        }
+        toastedEventIds.add(eventId);
         if (event.type === "invite-declined") {
           get().pushToast("info", `${event.byDisplayName} declined the invite`);
         } else if (event.type === "buddy-accepted") {
@@ -345,6 +369,7 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
       }
     }
     onlineDetachByUid = new Map();
+    toastedEventIds = new Set();
     detachGlobalPresence();
     set(() => ({ buddy: freshBuddy() }));
   },
