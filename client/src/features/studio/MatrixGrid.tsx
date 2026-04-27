@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import type { MixerCell, TrackKind } from "@beats/shared";
@@ -46,24 +46,30 @@ export function MatrixGrid() {
   );
   // Live-session presence — pluck the focus.cellId from every active
   // peer so we can paint their color on whatever cell they're sitting
-  // on. Stale presence (>8s) is filtered out to avoid ghost peers
-  // lingering after a tab close. Local user is excluded; you don't
-  // need to see your own dot.
-  const peerFocusByCell = useBeatsStore((s) => {
-    const myUid = s.auth.user?.id ?? null;
-    const presence = s.collab.session.presence;
-    const participants = s.collab.session.participants;
+  // on. Selectors are kept primitive (single store-stable references
+  // each); the derived object is built in `useMemo`. Returning a new
+  // object straight from a Zustand selector trips React 18's strict
+  // useSyncExternalStore consistency check (error #185 — "max update
+  // depth exceeded") because each render produces a new identity even
+  // when no state changed.
+  const sessionId = useBeatsStore((s) => s.collab.session.id);
+  const sessionPresence = useBeatsStore((s) => s.collab.session.presence);
+  const sessionParticipants = useBeatsStore(
+    (s) => s.collab.session.participants,
+  );
+  const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
+  const peerFocusByCell = useMemo(() => {
     const out: Record<
       string,
       Array<{ uid: string; color: string; name: string }>
     > = {};
-    if (!s.collab.session.id) return out;
+    if (!sessionId) return out;
     const now = Date.now();
-    for (const [uid, p] of Object.entries(presence)) {
+    for (const [uid, p] of Object.entries(sessionPresence)) {
       if (uid === myUid) continue;
       if (!p?.focus?.cellId) continue;
       if (now - (p.lastSeen ?? 0) > 8000) continue;
-      const participant = participants[uid];
+      const participant = sessionParticipants[uid];
       const color = participant?.color ?? p.color ?? "#b84dff";
       const name = participant?.displayName ?? p.displayName ?? "peer";
       const cellId = p.focus.cellId;
@@ -72,7 +78,7 @@ export function MatrixGrid() {
       out[cellId] = list;
     }
     return out;
-  });
+  }, [sessionId, sessionPresence, sessionParticipants, myUid]);
   const [seeding, setSeeding] = useState(false);
   const [showSeedModal, setShowSeedModal] = useState(false);
 
