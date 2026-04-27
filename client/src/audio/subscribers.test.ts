@@ -30,7 +30,7 @@ describe("EngineSubscribers", () => {
   it("isolates listeners — one throwing does not break others", () => {
     const subs = new EngineSubscribers();
     const good = vi.fn();
-    // eslint-disable-next-line no-console
+     
     const consoleErr = vi.spyOn(console, "error").mockImplementation(() => {});
     subs.subscribe("step", () => {
       throw new Error("boom");

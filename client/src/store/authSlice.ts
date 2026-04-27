@@ -65,7 +65,7 @@ export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
     // changes, so onIdTokenChanged's first emission sees the signed-in user
     // rather than firing with null and triggering a 401 on /api/auth/session.
     const ready = getRedirectResult(auth).catch((err) => {
-      // eslint-disable-next-line no-console
+       
       console.warn("[auth] getRedirectResult failed", err);
       return null;
     });

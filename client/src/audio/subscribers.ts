@@ -28,7 +28,7 @@ export class EngineSubscribers {
       try {
         (cb as Listener<E>)(payload);
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.error(`[audio] subscriber for ${event} threw`, err);
       }
     }

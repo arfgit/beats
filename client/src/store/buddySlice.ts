@@ -1,7 +1,6 @@
 import type { StateCreator } from "zustand";
 import {
   collection,
-  doc,
   onSnapshot,
   type Unsubscribe as FirestoreUnsub,
 } from "firebase/firestore";
@@ -124,7 +123,6 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
       const result = await api.get<{ code: string }>("/me/buddy-code");
       set((s) => ({ buddy: { ...s.buddy, myCode: result.code } }));
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn("[buddy] loadBuddyCode failed", err);
     }
   },
@@ -379,8 +377,11 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
           // Clear the outgoing record so the UI can offer "re-invite"
           // immediately instead of waiting for the TTL.
           set((s) => {
-            if (!s.buddy.outgoingInvites[event.byUid]) return s;
-            const { [event.byUid]: _gone, ...rest } = s.buddy.outgoingInvites;
+            const outgoing = s.buddy.outgoingInvites;
+            if (!outgoing[event.byUid]) return s;
+            const rest = Object.fromEntries(
+              Object.entries(outgoing).filter(([uid]) => uid !== event.byUid),
+            );
             return { buddy: { ...s.buddy, outgoingInvites: rest } };
           });
         } else if (event.type === "buddy-accepted") {

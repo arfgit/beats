@@ -122,6 +122,36 @@ export default function StudioRoute() {
     void joinSession(remembered);
   }, [authedUid, projectId, joiningSessionId, liveSessionId, joinSession]);
 
+  // Sidebar "go live on this project" handoff. ProjectList nav-pushes
+  // `/studio/<id>?goLive=1`; once the project hydrates and we're not
+  // already in a session, kick off startSession and strip the flag so
+  // a refresh doesn't re-fire the start.
+  const goLiveRequested = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("goLive") === "1";
+  }, [location.search]);
+  const startSession = useBeatsStore((s) => s.startSession);
+  useEffect(() => {
+    if (!goLiveRequested) return;
+    if (!authedUid || !projectId) return;
+    if (liveSessionId) return;
+    if (loadedProjectId !== projectId) return;
+    void startSession(projectId).finally(() => {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("goLive");
+      const next = params.toString();
+      const url = `${window.location.pathname}${next ? `?${next}` : ""}`;
+      window.history.replaceState({}, "", url);
+    });
+  }, [
+    goLiveRequested,
+    authedUid,
+    projectId,
+    liveSessionId,
+    loadedProjectId,
+    startSession,
+  ]);
+
   const tabIdRef = useRef<string>(nanoid(8));
 
   useEffect(() => {

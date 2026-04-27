@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import {
   collection,
@@ -18,6 +18,11 @@ import { Tooltip } from "@/components/ui/Tooltip";
 export function ProjectList() {
   const uid = useBeatsStore((s) => s.auth.user?.id);
   const deleteProject = useBeatsStore((s) => s.deleteProject);
+  const liveSessionId = useBeatsStore((s) => s.collab.session.id);
+  const sessionMetaProjectId = useBeatsStore(
+    (s) => s.collab.session.meta?.projectId ?? null,
+  );
+  const navigate = useNavigate();
   const [mine, setMine] = useState<Project[]>([]);
   const [shared, setShared] = useState<Project[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Project | null>(null);
@@ -61,13 +66,25 @@ export function ProjectList() {
     if (ok) setPendingDelete(null);
   };
 
+  const handleGoLive = (p: Project) => {
+    // Disallow starting a session on project A while you're already
+    // hosting/joined on project B — would orphan the other peers and
+    // leave the studio in an ambiguous state. The button is rendered
+    // disabled for those rows; this is a defense-in-depth guard.
+    if (liveSessionId && sessionMetaProjectId !== p.id) return;
+    navigate(`/studio/${p.id}?goLive=1`);
+  };
+
   return (
     <aside className="border border-grid rounded p-3 bg-bg-panel/60 space-y-3 text-xs font-mono">
       <Section
         title="my projects"
         projects={mine}
         canDelete
+        canGoLive
+        liveSessionProjectId={liveSessionId ? sessionMetaProjectId : null}
         onRequestDelete={(p) => setPendingDelete(p)}
+        onRequestGoLive={handleGoLive}
       />
       <Section
         title="shared with me"
@@ -94,14 +111,29 @@ function Section({
   projects,
   empty = "nothing yet",
   canDelete = false,
+  canGoLive = false,
+  liveSessionProjectId = null,
   onRequestDelete,
+  onRequestGoLive,
 }: {
   title: string;
   projects: Project[];
   empty?: string;
   canDelete?: boolean;
+  canGoLive?: boolean;
+  liveSessionProjectId?: string | null;
   onRequestDelete?: (project: Project) => void;
+  onRequestGoLive?: (project: Project) => void;
 }) {
+  // When the user is already in a session, mute the go-live button on
+  // OTHER rows — switching projects mid-session would orphan peers.
+  // The current-project row instead shows a "live" indicator.
+  const inSessionElsewhere = (projectId: string) =>
+    liveSessionProjectId !== null && liveSessionProjectId !== projectId;
+  // Right padding leaves room for the action buttons sitting on top of
+  // the row link. With both go-live + delete, we need ~3rem.
+  const linkPaddingRight =
+    canGoLive && canDelete ? "pr-12" : canDelete ? "pr-7" : "";
   return (
     <div>
       <h3 className="text-[10px] uppercase tracking-widest text-ink-muted mb-1.5">
@@ -111,54 +143,98 @@ function Section({
         <p className="text-ink-muted text-[10px]">{empty}</p>
       ) : (
         <ul className="space-y-1">
-          {projects.map((p) => (
-            <li key={p.id} className="relative">
-              <Tooltip
-                label={`last saved ${new Date(p.updatedAt).toLocaleString()}`}
-              >
-                <Link
-                  to={`/studio/${p.id}`}
-                  className="block px-2 py-1 pr-7 rounded text-ink-dim hover:text-neon-cyan hover:bg-bg-panel-2/60 transition-colors duration-150"
+          {projects.map((p) => {
+            const isLive = liveSessionProjectId === p.id;
+            const otherSessionActive = inSessionElsewhere(p.id);
+            return (
+              <li key={p.id} className="relative">
+                <Tooltip
+                  label={`last saved ${new Date(p.updatedAt).toLocaleString()}`}
                 >
-                  <span className="truncate">{p.title}</span>
-                  {p.isPublic && (
-                    <span className="ml-2 text-[9px] text-neon-green">
-                      ● public
-                    </span>
-                  )}
-                </Link>
-              </Tooltip>
-              {canDelete && onRequestDelete && (
-                <button
-                  type="button"
-                  aria-label={`delete project ${p.title}`}
-                  title="delete project"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onRequestDelete(p);
-                  }}
-                  className="absolute top-1/2 right-1 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:text-neon-red hover:bg-neon-red/10 transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-red"
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden
+                  <Link
+                    to={`/studio/${p.id}`}
+                    className={clsx(
+                      "block px-2 py-1 rounded text-ink-dim hover:text-neon-cyan hover:bg-bg-panel-2/60 transition-colors duration-150",
+                      linkPaddingRight,
+                    )}
                   >
-                    <path
-                      d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5L11 4M7 6.5v4.5M9 6.5v4.5"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-              )}
-            </li>
-          ))}
+                    <span className="truncate">{p.title}</span>
+                    {p.isPublic && (
+                      <span className="ml-2 text-[9px] text-neon-green">
+                        ● public
+                      </span>
+                    )}
+                    {isLive && (
+                      <span className="ml-2 text-[9px] uppercase tracking-widest text-neon-violet animate-pulse">
+                        ● live
+                      </span>
+                    )}
+                  </Link>
+                </Tooltip>
+                {canGoLive && onRequestGoLive && !isLive && (
+                  <Tooltip
+                    label={
+                      otherSessionActive
+                        ? "you're already live in another project — leave that session first"
+                        : "start a live collab session on this project"
+                    }
+                  >
+                    <button
+                      type="button"
+                      aria-label={`go live on ${p.title}`}
+                      disabled={otherSessionActive}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (otherSessionActive) return;
+                        onRequestGoLive(p);
+                      }}
+                      className="absolute top-1/2 right-7 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:text-neon-violet hover:bg-neon-violet/10 transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-ink-muted disabled:hover:bg-transparent"
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden
+                      >
+                        <path d="M5 3.5v9l7-4.5-7-4.5z" fill="currentColor" />
+                      </svg>
+                    </button>
+                  </Tooltip>
+                )}
+                {canDelete && onRequestDelete && (
+                  <button
+                    type="button"
+                    aria-label={`delete project ${p.title}`}
+                    title="delete project"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRequestDelete(p);
+                    }}
+                    className="absolute top-1/2 right-1 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:text-neon-red hover:bg-neon-red/10 transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-red"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      aria-hidden
+                    >
+                      <path
+                        d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5L11 4M7 6.5v4.5M9 6.5v4.5"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

@@ -122,7 +122,7 @@ export function WaveformTrimmer({
   // Stop preview on unmount so the audio context isn't leaking nodes.
   useEffect(() => {
     return () => stopPlayback();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   function stopPlayback() {

@@ -15,7 +15,7 @@ import { env } from "./env";
 // Surface a friendly, loud error if the config is missing before any
 // Firebase call spins up and fails with an opaque network error.
 if (!env.useEmulators && !env.firebase.apiKey) {
-  // eslint-disable-next-line no-console
+   
   console.error(
     "[firebase] VITE_FIREBASE_API_KEY is not set. Either:\n" +
       "  1) copy your web app config into client/.env.local from Firebase Console\n" +
@@ -48,13 +48,13 @@ export const googleProvider = new GoogleAuthProvider();
 // Loud boot-time diagnostic. Easy to grep for in DevTools when data isn't
 // showing up — the usual culprit is a stale VITE_USE_EMULATORS=true in
 // .env.local pointing the studio at an empty local emulator.
-/* eslint-disable no-console */
+ 
 console.info(
   `%c[firebase]%c mode=${env.useEmulators ? "EMULATOR" : "PRODUCTION"}  project=${env.firebase.projectId || "(unset)"}  apiKey=${env.firebase.apiKey ? "set" : "MISSING"}`,
   "color:#ff2a6d;font-weight:bold",
   "color:inherit",
 );
-/* eslint-enable no-console */
+ 
 
 if (env.useEmulators) {
   connectAuthEmulator(auth, "http://localhost:9099", { disableWarnings: true });

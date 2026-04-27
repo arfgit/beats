@@ -28,7 +28,7 @@ const ENABLED = import.meta.env.VITE_ANALYTICS_ENABLED === "true";
 
 async function dispatch(name: EventName, props: EventProps): Promise<void> {
   if (DEV) {
-    // eslint-disable-next-line no-console
+     
     console.debug("[analytics]", name, props);
   }
   if (!ENABLED) return;
@@ -43,7 +43,7 @@ async function dispatch(name: EventName, props: EventProps): Promise<void> {
     // Swallow — analytics must never break the app — but surface in dev
     // so flaky dispatch logic is visible while iterating.
     if (DEV) {
-      // eslint-disable-next-line no-console
+       
       console.debug("[analytics] dispatch failed", err);
     }
   }

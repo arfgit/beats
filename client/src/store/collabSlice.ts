@@ -5,11 +5,8 @@ import {
   onChildAdded,
   onValue,
   push,
-  remove,
-  serverTimestamp,
   set as dbSet,
   type DataSnapshot,
-  type Unsubscribe,
 } from "firebase/database";
 import {
   COLLAB_PROTOCOL_VERSION,
@@ -245,7 +242,7 @@ export const createCollabSlice: StateCreator<
       rememberActiveSession(projectId, result.sessionId);
       return result.sessionId;
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error("[collab] startSession failed", err);
       return null;
     }
@@ -288,7 +285,7 @@ export const createCollabSlice: StateCreator<
       rememberActiveSession(result.meta.projectId, sessionId);
       return true;
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error("[collab] joinSession failed", err);
       return false;
     }
@@ -303,7 +300,7 @@ export const createCollabSlice: StateCreator<
     try {
       await api.post(`/sessions/${sessionId}/leave`, {});
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn("[collab] leaveSession server call failed", err);
     }
     set((s) => ({ collab: { ...s.collab, session: freshSession() } }));
@@ -328,7 +325,7 @@ export const createCollabSlice: StateCreator<
     try {
       await api.delete(`/sessions/${sessionId}`);
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn("[collab] endSession server call failed", err);
     }
     set((s) => ({ collab: { ...s.collab, session: freshSession() } }));
@@ -348,7 +345,7 @@ export const createCollabSlice: StateCreator<
       // metaHandler picks up the RTDB change and refreshes local state.
       return true;
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn("[collab] setSessionPermissions failed", err);
       get().pushToast("error", "couldn't update session permissions");
       return false;
@@ -546,8 +543,6 @@ function applyRemoteSnapshot(
       },
     }));
   }
-  void serverTimestamp; // keep import live for future "lastEditAt" writes
-  void remove; // imported for future participant-eviction calls
 }
 
 /**

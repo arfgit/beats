@@ -104,7 +104,7 @@ export const createSamplesSlice: StateCreator<
           // query still matches `samples/{allow read: if resource.data.isBuiltIn == true}`
           // rules — dropping isBuiltIn here causes Firestore to reject the
           // whole query for signed-out users.
-          // eslint-disable-next-line no-console
+           
           console.warn(
             `[samples] composite index unavailable, falling back to client sort`,
             indexErr,
@@ -129,7 +129,7 @@ export const createSamplesSlice: StateCreator<
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "samples load failed";
-      // eslint-disable-next-line no-console
+       
       console.error(`[samples] fetch ${kind} failed`, err);
       set((s) => ({
         samples: {
