@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Button } from "@/components/ui/Button";
@@ -8,14 +8,26 @@ import { Button } from "@/components/ui/Button";
  * Watches `?session=<id>` on the studio URL. When present and we're
  * not already in that session, surface an explicit confirmation modal
  * — auto-join would surprise users who clicked a link expecting to
- * just view the project. After accept (or deny), strip the query
- * param so a refresh doesn't re-prompt.
+ * just view the project.
+ *
+ * The projectId comes from the route params, NOT from the store's
+ * `project.current.id`. Invitees who aren't on the project's
+ * collaborator list legitimately have `project.current === null`
+ * (Studio.tsx skips loadProject for them to dodge a Firestore deny
+ * loop). Reading from the URL keeps the prompt visible regardless
+ * of Firestore access.
+ *
+ * After accept, we deliberately do NOT strip `?session=` from the URL.
+ * Doing so used to retrigger the Studio mount effect (joiningSessionId
+ * dep flipped to null, cleanup ran clearProject + rehydrateFromLocalCache,
+ * which clobbered the just-applied snapshot). The component handles
+ * "already in this session" via the `activeSessionId === sessionParam`
+ * short-circuit below — refreshing or revisiting the URL just no-ops.
  */
 export function SessionJoinPrompt() {
-  const navigate = useNavigate();
   const location = useLocation();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
   const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
-  const projectId = useBeatsStore((s) => s.project.current?.id ?? null);
   const activeSessionId = useBeatsStore((s) => s.collab.session.id);
   const joinSession = useBeatsStore((s) => s.joinSession);
   const pushToast = useBeatsStore((s) => s.pushToast);
@@ -30,16 +42,6 @@ export function SessionJoinPrompt() {
   useEffect(() => {
     setDismissed(false);
   }, [sessionParam]);
-
-  const stripParam = () => {
-    const next = new URLSearchParams(location.search);
-    next.delete("session");
-    const search = next.toString();
-    navigate(
-      { pathname: location.pathname, search: search ? `?${search}` : "" },
-      { replace: true },
-    );
-  };
 
   if (!sessionParam || dismissed) return null;
   if (!myUid) {
@@ -63,10 +65,7 @@ export function SessionJoinPrompt() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => {
-                setDismissed(true);
-                stripParam();
-              }}
+              onClick={() => setDismissed(true)}
             >
               dismiss
             </Button>
@@ -97,10 +96,7 @@ export function SessionJoinPrompt() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => {
-                setDismissed(true);
-                stripParam();
-              }}
+              onClick={() => setDismissed(true)}
             >
               dismiss
             </Button>
@@ -109,7 +105,7 @@ export function SessionJoinPrompt() {
       </div>
     );
   }
-  if (!projectId) return null;
+  if (!routeProjectId) return null;
 
   const onAccept = async () => {
     setBusy(true);
@@ -122,13 +118,18 @@ export function SessionJoinPrompt() {
       }
     } finally {
       setBusy(false);
-      stripParam();
+      // Mark dismissed (instead of stripping the URL) so the prompt
+      // doesn't re-render. Leaving the URL intact means a refresh
+      // doesn't re-fire the Studio mount cleanup, which would clobber
+      // the snapshot we just applied. The prompt's own
+      // `activeSessionId === sessionParam` short-circuit handles the
+      // "already in this session" case on refresh.
+      setDismissed(true);
     }
   };
 
   const onDecline = () => {
     setDismissed(true);
-    stripParam();
   };
 
   return (
