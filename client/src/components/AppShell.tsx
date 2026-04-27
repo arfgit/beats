@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { useRouteTracker } from "@/lib/useRouteTracker";
+import { IncomingInviteToast } from "@/features/buddy/IncomingInviteToast";
 import { Button } from "./ui/Button";
 
 interface NavItem {
@@ -255,6 +256,7 @@ export function AppShell() {
                 <span className="text-sm text-ink font-mono truncate">
                   {user.displayName}
                 </span>
+                <BuddyCodeChip />
                 <Button variant="ghost" onClick={() => void signOut()}>
                   sign out
                 </Button>
@@ -291,6 +293,61 @@ export function AppShell() {
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <Outlet />
       </main>
+      <IncomingInviteToast />
+      <BuddyNavigationBridge />
     </div>
   );
+}
+
+/**
+ * Buddy code chip — displays the user's BX-XXXXX code with copy-on-click.
+ * Hidden when the code hasn't loaded yet. The slice's
+ * `attachBuddyListeners` lazy-loads the code on auth login so this
+ * rarely shows the empty state.
+ */
+function BuddyCodeChip() {
+  const code = useBeatsStore((s) => s.buddy.myCode);
+  const pushToast = useBeatsStore((s) => s.pushToast);
+  if (!code) return null;
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      pushToast("success", "buddy code copied");
+    } catch {
+      pushToast("warn", "couldn't copy — select manually");
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => void onCopy()}
+      aria-label="copy your buddy code"
+      title="your buddy code — share with friends to live-jam together"
+      className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-grid bg-bg-panel-2 text-[10px] font-mono text-ink-dim hover:border-neon-violet hover:text-neon-violet transition-colors duration-150 motion-reduce:transition-none self-start"
+    >
+      <span aria-hidden className="text-ink-muted">
+        code
+      </span>
+      <span className="text-ink">{code}</span>
+    </button>
+  );
+}
+
+/**
+ * Tiny effect that watches `buddy.pendingNavigation` and routes the
+ * tab there once. Keeps the buddy slice framework-agnostic — it sets
+ * a string, this component dispatches the actual `useNavigate` call.
+ */
+function BuddyNavigationBridge() {
+  const navigate = useNavigate();
+  const pending = useBeatsStore((s) => s.buddy.pendingNavigation);
+  const consumePendingNavigation = useBeatsStore(
+    (s) => s.consumePendingNavigation,
+  );
+  useEffect(() => {
+    if (!pending) return;
+    const target = consumePendingNavigation();
+    if (target) navigate(target, { replace: false });
+  }, [pending, navigate, consumePendingNavigation]);
+  return null;
 }

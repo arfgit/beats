@@ -16,8 +16,8 @@ vi.mock("@/audio/engine", () => ({
 }));
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 
-const pushMock = vi.fn();
-const dbSetMock = vi.fn();
+const pushMock = vi.fn().mockResolvedValue(undefined);
+const dbSetMock = vi.fn().mockResolvedValue(undefined);
 vi.mock("firebase/database", async () => {
   const actual =
     await vi.importActual<typeof import("firebase/database")>(
@@ -33,8 +33,42 @@ vi.mock("firebase/database", async () => {
     off: vi.fn(),
     serverTimestamp: vi.fn(),
     remove: vi.fn(),
+    update: vi.fn(),
+    onDisconnect: vi.fn(() => ({
+      remove: vi.fn().mockResolvedValue(undefined),
+      set: vi.fn().mockResolvedValue(undefined),
+    })),
   };
 });
+
+vi.mock("firebase/firestore", async () => {
+  const actual =
+    await vi.importActual<typeof import("firebase/firestore")>(
+      "firebase/firestore",
+    );
+  return {
+    ...actual,
+    onSnapshot: vi.fn(() => () => undefined),
+    collection: vi.fn(() => ({})),
+    doc: vi.fn(() => ({})),
+  };
+});
+
+vi.mock("@/lib/api", () => ({
+  api: {
+    get: vi.fn().mockResolvedValue({ code: "BX-TEST1" }),
+    post: vi.fn().mockResolvedValue({}),
+    patch: vi.fn().mockResolvedValue({}),
+    delete: vi.fn().mockResolvedValue({}),
+  },
+  ApiCallError: class ApiCallError extends Error {
+    apiError: { code: string; message: string };
+    constructor(apiError: { code: string; message: string }) {
+      super(apiError.message);
+      this.apiError = apiError;
+    }
+  },
+}));
 
 const { useBeatsStore } = await import("./useBeatsStore");
 

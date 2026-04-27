@@ -14,6 +14,8 @@ import projectRoutes from "./routes/projects.js";
 import trackRoutes from "./routes/tracks.js";
 import sampleRoutes from "./routes/samples.js";
 import sessionRoutes from "./routes/sessions.js";
+import buddyRoutes from "./routes/buddies.js";
+import inviteRoutes from "./routes/invites.js";
 import userRoutes from "./routes/users.js";
 import analyticsRoutes from "./routes/analytics.js";
 import adminRoutes from "./routes/admin.js";
@@ -72,6 +74,8 @@ export function createApp() {
   app.use("/api", trackRoutes);
   app.use("/api", sampleRoutes);
   app.use("/api", sessionRoutes);
+  app.use("/api", buddyRoutes);
+  app.use("/api", inviteRoutes);
   app.use("/api", userRoutes);
   app.use("/api", analyticsRoutes);
   app.use("/api", adminRoutes);

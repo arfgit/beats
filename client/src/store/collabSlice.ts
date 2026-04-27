@@ -21,6 +21,7 @@ import {
 } from "@beats/shared";
 import { rtdb } from "@/lib/firebase";
 import { api } from "@/lib/api";
+import { updateCurrentSession } from "@/lib/global-presence";
 import {
   clearPresence,
   pickPeerColor,
@@ -227,6 +228,9 @@ export const createCollabSlice: StateCreator<
           },
         },
       }));
+      // Tell our global-presence node we're now in this session so
+      // the buddy invite endpoint can reject "Bob is busy" cases.
+      updateCurrentSession(result.sessionId);
       return result.sessionId;
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -268,6 +272,7 @@ export const createCollabSlice: StateCreator<
           },
         },
       }));
+      updateCurrentSession(sessionId);
       return true;
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -287,6 +292,7 @@ export const createCollabSlice: StateCreator<
       console.warn("[collab] leaveSession server call failed", err);
     }
     set((s) => ({ collab: { ...s.collab, session: freshSession() } }));
+    updateCurrentSession(null);
     // Re-arm the legacy Firestore presence on the project we were in,
     // and re-subscribe to the project's onSnapshot listener so remote
     // edits made outside the session (e.g. another tab) start landing
@@ -309,6 +315,7 @@ export const createCollabSlice: StateCreator<
       console.warn("[collab] endSession server call failed", err);
     }
     set((s) => ({ collab: { ...s.collab, session: freshSession() } }));
+    updateCurrentSession(null);
     const projectId = get().project.current?.id;
     if (projectId) get().startCollab(projectId);
   },

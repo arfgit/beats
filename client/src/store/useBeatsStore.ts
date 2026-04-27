@@ -13,6 +13,7 @@ import {
 import { createProjectSlice, type ProjectSlice } from "./projectSlice";
 import { createCollabSlice, type CollabSlice } from "./collabSlice";
 import { createSamplesSlice, type SamplesSlice } from "./samplesSlice";
+import { createBuddySlice, type BuddySlice } from "./buddySlice";
 
 export type BeatsStore = AuthSlice &
   UiSlice &
@@ -22,7 +23,8 @@ export type BeatsStore = AuthSlice &
   CommandHistorySlice &
   ProjectSlice &
   CollabSlice &
-  SamplesSlice;
+  SamplesSlice &
+  BuddySlice;
 
 export const useBeatsStore = create<BeatsStore>()((...a) => ({
   ...createAuthSlice(...a),
@@ -34,6 +36,7 @@ export const useBeatsStore = create<BeatsStore>()((...a) => ({
   ...createProjectSlice(...a),
   ...createCollabSlice(...a),
   ...createSamplesSlice(...a),
+  ...createBuddySlice(...a),
 }));
 
 // Bridge audio/context visibility events into the transport slice so the
@@ -87,6 +90,24 @@ useBeatsStore.subscribe((state) => {
   }
 
   if (state.project.current) state.markDirty();
+});
+
+// Buddy listener lifecycle: on auth flip to "authed" attach the
+// listeners (buddies, requests, incoming invites, decline events,
+// global presence). On flip away (logout, error), tear them down.
+// Doing this here rather than in a React effect keeps the listeners
+// outside the component tree — they outlive route changes and don't
+// fight Studio's mount cleanup.
+let previousAuthUid = useBeatsStore.getState().auth.user?.id ?? null;
+useBeatsStore.subscribe((state) => {
+  const nextUid = state.auth.user?.id ?? null;
+  if (nextUid === previousAuthUid) return;
+  previousAuthUid = nextUid;
+  if (nextUid) {
+    state.attachBuddyListeners(nextUid);
+  } else {
+    state.detachBuddyListeners();
+  }
 });
 
 // Local cache mirror: debounce-write matrix + selectedCellId to

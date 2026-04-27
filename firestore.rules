@@ -65,5 +65,30 @@ service cloud.firestore {
     match /invites/{inviteId} {
       allow read, write: if false;
     }
+
+    // Reverse lookup: code → uid. Any authed user can read because the
+    // whole point is paste-to-connect. Mitigations live at the API
+    // layer: rate-limited code submission, plus the keyspace itself
+    // (~28^5 = 17M codes) bounds enumeration. Server writes via Admin
+    // SDK on code generation + rotation.
+    match /buddyCodes/{code} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Per-user buddy graph. Both sides written atomically by the
+    // server on accept; only the owning uid can read their own list.
+    match /users/{uid}/buddies/{otherUid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Pending buddy requests (both incoming + outgoing live here,
+    // distinguished by the `direction` field). Mirrored on both
+    // users' subcollections with the same id for symmetric ops.
+    match /users/{uid}/buddyRequests/{requestId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
   }
 }

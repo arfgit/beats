@@ -1,5 +1,21 @@
 {
   "rules": {
+    "users": {
+      "$uid": {
+        "online": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid == $uid"
+        },
+        "incomingInvites": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": false
+        },
+        "inviteEvents": {
+          ".read": "auth != null && auth.uid == $uid",
+          ".write": false
+        }
+      }
+    },
     "sessions": {
       "$sessionId": {
         ".read": "auth != null && root.child('sessions').child($sessionId).child('meta').exists()",

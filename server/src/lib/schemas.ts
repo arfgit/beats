@@ -206,6 +206,20 @@ export const createSessionBody = z.object({
   projectId: z.string().min(1).max(64),
 });
 
+// Buddy connect — paste a code, server resolves and writes a request.
+export const connectBuddyBody = z.object({
+  // Accept casing/whitespace variants — service normalizes via
+  // `normalizeBuddyCode` before lookup. Length cap stays generous so
+  // future code formats don't need a schema bump.
+  code: z.string().min(3).max(20),
+});
+
+// Send invite — recipient uid + the live session to invite into.
+export const sendInviteBody = z.object({
+  toUid: z.string().min(1).max(64),
+  sessionId: z.string().min(1).max(64),
+});
+
 // Join / leave / end carry no body — the session id lives on the URL,
 // the server reads everything else from Firestore + RTDB.
 export const sessionEmptyBody = z.object({}).strict();

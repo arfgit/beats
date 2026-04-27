@@ -233,23 +233,28 @@ export function SessionInviteDialog({ open, onClose }: Props) {
         )}
 
         {sessionActive && (
-          <div className="space-y-3">
-            <p className="text-ink-dim text-xs">
-              Share this link. {participantCount} in the room.
-            </p>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={shareUrl}
-                aria-label="invite link"
-                className="flex-1 h-9 px-2 bg-bg-panel-2 border border-grid rounded text-ink font-mono text-xs select-all"
-                onFocus={(e) => e.currentTarget.select()}
-              />
-              <Button type="button" onClick={onCopy}>
-                copy
-              </Button>
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <p className="text-ink-dim text-xs">
+                Share this link. {participantCount} in the room.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareUrl}
+                  aria-label="invite link"
+                  className="flex-1 h-9 px-2 bg-bg-panel-2 border border-grid rounded text-ink font-mono text-xs select-all"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <Button type="button" onClick={onCopy}>
+                  copy
+                </Button>
+              </div>
             </div>
+
+            <BuddiesPanel sessionId={session.id ?? ""} />
+
             <div className="flex justify-between gap-2 pt-1">
               {isOwner && (
                 <Button
@@ -267,6 +272,156 @@ export function SessionInviteDialog({ open, onClose }: Props) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Buddies sub-panel rendered inside an active session. Lists buddies
+ * with online dots, lets the host fire a real-time invite, surfaces
+ * the user's own buddy code for sharing, and exposes an inline
+ * "connect with someone" input.
+ */
+function BuddiesPanel({ sessionId }: { sessionId: string }) {
+  const buddies = useBeatsStore((s) => s.buddy.buddies);
+  const onlineUids = useBeatsStore((s) => s.buddy.onlineUids);
+  const myCode = useBeatsStore((s) => s.buddy.myCode);
+  const sendInvite = useBeatsStore((s) => s.sendInvite);
+  const submitBuddyCode = useBeatsStore((s) => s.submitBuddyCode);
+  const pushToast = useBeatsStore((s) => s.pushToast);
+  const [inFlight, setInFlight] = useState<Set<string>>(new Set());
+  const [draftCode, setDraftCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const buddyList = Object.values(buddies).sort((a, b) => {
+    const aOnline = onlineUids[a.uid] ? 1 : 0;
+    const bOnline = onlineUids[b.uid] ? 1 : 0;
+    if (aOnline !== bOnline) return bOnline - aOnline;
+    return a.displayName.localeCompare(b.displayName);
+  });
+
+  const onInvite = async (toUid: string) => {
+    if (!sessionId) return;
+    setInFlight((prev) => new Set(prev).add(toUid));
+    try {
+      await sendInvite(toUid, sessionId);
+    } finally {
+      setInFlight((prev) => {
+        const next = new Set(prev);
+        next.delete(toUid);
+        return next;
+      });
+    }
+  };
+
+  const onCopyCode = async () => {
+    if (!myCode) return;
+    try {
+      await navigator.clipboard.writeText(myCode);
+      pushToast("success", "buddy code copied");
+    } catch {
+      pushToast("warn", "couldn't copy — select and copy manually");
+    }
+  };
+
+  const onSubmitCode = async () => {
+    const trimmed = draftCode.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    try {
+      const ok = await submitBuddyCode(trimmed);
+      if (ok) setDraftCode("");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-grid">
+      <div className="flex items-center justify-between">
+        <h4 className="text-[10px] uppercase tracking-widest text-ink-muted font-mono">
+          buddies
+        </h4>
+        {myCode && (
+          <button
+            type="button"
+            onClick={onCopyCode}
+            className="text-[10px] font-mono text-ink-dim hover:text-neon-violet transition-colors duration-150 motion-reduce:transition-none"
+            aria-label="copy your buddy code"
+          >
+            your code: <span className="text-ink">{myCode}</span>
+          </button>
+        )}
+      </div>
+
+      {buddyList.length === 0 && (
+        <p className="text-ink-muted text-[11px]">
+          No buddies yet. Share your code or paste a friend&apos;s code below.
+        </p>
+      )}
+
+      {buddyList.length > 0 && (
+        <ul className="space-y-1.5 max-h-40 overflow-auto">
+          {buddyList.map((buddy) => {
+            const online = !!onlineUids[buddy.uid];
+            const pending = inFlight.has(buddy.uid);
+            return (
+              <li key={buddy.uid} className="flex items-center gap-2 text-xs">
+                <span
+                  aria-hidden
+                  className={clsx(
+                    "inline-block h-1.5 w-1.5 rounded-full shrink-0",
+                    online ? "bg-neon-green" : "bg-ink-muted/40",
+                  )}
+                  style={
+                    online
+                      ? { boxShadow: "0 0 6px var(--neon-green)" }
+                      : undefined
+                  }
+                />
+                <span
+                  className={clsx(
+                    "flex-1 truncate font-mono",
+                    online ? "text-ink" : "text-ink-muted",
+                  )}
+                >
+                  {buddy.displayName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void onInvite(buddy.uid)}
+                  disabled={!online || pending}
+                  className="h-7 px-2 rounded border border-grid text-[10px] uppercase tracking-widest font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {pending ? "…" : online ? "invite" : "offline"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={draftCode}
+          onChange={(e) => setDraftCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onSubmitCode();
+          }}
+          placeholder="paste buddy code"
+          aria-label="buddy code to add"
+          maxLength={20}
+          className="flex-1 h-8 px-2 bg-bg-panel-2 border border-grid rounded text-ink font-mono text-xs uppercase placeholder:text-ink-muted/60 focus-visible:outline-none focus-visible:border-neon-violet"
+        />
+        <Button
+          type="button"
+          onClick={() => void onSubmitCode()}
+          disabled={submitting || !draftCode.trim()}
+        >
+          {submitting ? "…" : "add"}
+        </Button>
       </div>
     </div>
   );
