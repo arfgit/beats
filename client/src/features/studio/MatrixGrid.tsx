@@ -89,7 +89,13 @@ export function MatrixGrid() {
     for (const [uid, p] of Object.entries(sessionPresence)) {
       if (uid === myUid) continue;
       if (!p?.focus?.cellId) continue;
-      if (now - (p.lastSeen ?? 0) > 8000) continue;
+      // Treat the participants list as the source of truth for "is
+      // this peer in the session right now". The lastSeen filter
+      // (15s window) only kicks out ghost records that linger after
+      // an ungraceful disconnect — onDisconnect should clean those
+      // up, but we defend against the rare edge case anyway.
+      if (!sessionParticipants[uid]) continue;
+      if (now - (p.lastSeen ?? 0) > 15_000) continue;
       const participant = sessionParticipants[uid];
       const color = participant?.color ?? p.color ?? "#b84dff";
       const name = participant?.displayName ?? p.displayName ?? "peer";

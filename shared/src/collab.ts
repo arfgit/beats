@@ -89,7 +89,13 @@ export type EditOp =
     }
   | { kind: "pattern/clearAllSteps"; cellId: string }
   | { kind: "cell/setEnabled"; cellId: string; enabled: boolean }
-  | { kind: "cell/setName"; cellId: string; name: string };
+  | { kind: "cell/setName"; cellId: string; name: string }
+  // Transport ops broadcast playback state across the session so peers
+  // hear the same loop together. Drift between peers is unavoidable
+  // (each client runs its own audio clock) but the start/stop signal
+  // arrives within network latency, which is good enough for jamming.
+  | { kind: "transport/play" }
+  | { kind: "transport/stop" };
 
 /**
  * Edit envelope written to `/sessions/{id}/edits/{pushId}`. The

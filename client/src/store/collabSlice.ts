@@ -3,9 +3,11 @@ import {
   ref as dbRef,
   off,
   onChildAdded,
+  onDisconnect,
   onValue,
   push,
-  set as dbSet,
+  remove as dbRemove,
+  update as dbUpdate,
   type DataSnapshot,
 } from "firebase/database";
 import {
@@ -242,7 +244,6 @@ export const createCollabSlice: StateCreator<
       rememberActiveSession(projectId, result.sessionId);
       return result.sessionId;
     } catch (err) {
-       
       console.error("[collab] startSession failed", err);
       return null;
     }
@@ -285,7 +286,6 @@ export const createCollabSlice: StateCreator<
       rememberActiveSession(result.meta.projectId, sessionId);
       return true;
     } catch (err) {
-       
       console.error("[collab] joinSession failed", err);
       return false;
     }
@@ -300,7 +300,6 @@ export const createCollabSlice: StateCreator<
     try {
       await api.post(`/sessions/${sessionId}/leave`, {});
     } catch (err) {
-       
       console.warn("[collab] leaveSession server call failed", err);
     }
     set((s) => ({ collab: { ...s.collab, session: freshSession() } }));
@@ -325,7 +324,6 @@ export const createCollabSlice: StateCreator<
     try {
       await api.delete(`/sessions/${sessionId}`);
     } catch (err) {
-       
       console.warn("[collab] endSession server call failed", err);
     }
     set((s) => ({ collab: { ...s.collab, session: freshSession() } }));
@@ -345,7 +343,6 @@ export const createCollabSlice: StateCreator<
       // metaHandler picks up the RTDB change and refreshes local state.
       return true;
     } catch (err) {
-       
       console.warn("[collab] setSessionPermissions failed", err);
       get().pushToast("error", "couldn't update session permissions");
       return false;
@@ -377,18 +374,23 @@ export const createCollabSlice: StateCreator<
     if (!session.id) return;
     const user = get().auth.user;
     if (!user) return;
-    const presence: PresenceState = {
+    // Partial-merge updates so a cursor broadcast doesn't wipe the
+    // focus field set by the previous focusCell call (and vice versa).
+    // Earlier code used dbSet which overwrote the whole record — a
+    // cursor tick every ~100ms erased the host's focus on cell N
+    // before the invitee could render the indicator.
+    const updates: Record<string, unknown> = {
       v: COLLAB_PROTOCOL_VERSION,
       peerId: user.id,
       displayName: user.displayName,
       color: pickPeerColor(user.id),
       lastSeen: Date.now(),
-      ...(cursor !== null && { cursor }),
-      ...(focus !== null && { focus }),
     };
-    void dbSet(
+    if (cursor !== null) updates.cursor = cursor;
+    if (focus !== null) updates.focus = focus;
+    void dbUpdate(
       dbRef(rtdb, `sessions/${session.id}/presence/${user.id}`),
-      presence,
+      updates,
     );
   },
 });
@@ -466,6 +468,35 @@ function attachSessionListeners(
   };
   onChildAdded(editsRef, editsHandler);
   detach.push(() => off(editsRef, "child_added", editsHandler));
+
+  // 5. Heartbeat — bump our presence.lastSeen every few seconds so
+  //    idle peers (sitting on a cell, not moving the cursor) don't
+  //    fall off the staleness filter and disappear from the matrix
+  //    grid for everyone else. Uses dbUpdate so cursor + focus stay
+  //    intact.
+  const myUid = get().auth.user?.id;
+  if (myUid) {
+    const presenceSelfRef = dbRef(
+      rtdb,
+      `sessions/${sessionId}/presence/${myUid}`,
+    );
+    const heartbeat = setInterval(() => {
+      void dbUpdate(presenceSelfRef, { lastSeen: Date.now() });
+    }, 4000);
+    detach.push(() => clearInterval(heartbeat));
+
+    // Best-effort cleanup on disconnect (closed tab / dropped network)
+    // so a peer's presence record doesn't ghost on the matrix forever.
+    // Server still owns participant removal via /sessions/:id/leave.
+    const disconnect = onDisconnect(presenceSelfRef);
+    void disconnect.remove();
+    detach.push(() => {
+      void disconnect.cancel();
+      // Manual remove on intentional leave — onDisconnect only fires on
+      // ungraceful disconnects.
+      void dbRemove(presenceSelfRef);
+    });
+  }
 
   set((s) => ({
     collab: { ...s.collab, session: { ...s.collab.session, detach } },
@@ -563,14 +594,23 @@ function applyRemoteEdit(
     },
   }));
   try {
-    // All EditOp kinds carry a `cellId` (or are pattern-level shared
-    // state). Route through the matrix-targeted apply so remote ops
-    // land on the cell the host actually changed instead of whichever
-    // cell this peer happens to have selected. The previous per-op
-    // dispatch leaked through the local pattern slice and silently
-    // mis-targeted edits — that's why a host edit on cell 1 could land
-    // on the invitee's cell 3 view.
-    get().applyRemoteEditOp(message.op);
+    const op = message.op;
+    if (op.kind === "transport/play") {
+      // Fire-and-forget; play() captures applyingRemote synchronously
+      // before its first await, so the broadcast-skip flag survives
+      // the async gap even though we reset it in the finally below.
+      void get().play();
+    } else if (op.kind === "transport/stop") {
+      get().stop();
+    } else {
+      // All other EditOp kinds carry a `cellId` (or are pattern-level
+      // shared state). Route through the matrix-targeted apply so
+      // remote ops land on the cell the host actually changed instead
+      // of whichever cell this peer happens to have selected. The
+      // previous per-op dispatch leaked through the local pattern
+      // slice and silently mis-targeted edits.
+      get().applyRemoteEditOp(op);
+    }
   } finally {
     set((s) => ({
       collab: {

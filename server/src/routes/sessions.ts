@@ -22,6 +22,9 @@ import { createRateLimiter } from "../lib/rate-limit.js";
 const router = Router();
 const sessionLimiter = createRateLimiter({ capacity: 8, refillPerMin: 16 });
 
+/** Maximum live participants per session (host + invitees). */
+const MAX_SESSION_PARTICIPANTS = 4;
+
 // Curated palette of distinguishable peer colors. Matches the studio's
 // neon palette without colliding with the reserved error red.
 const PEER_COLORS = [
@@ -159,6 +162,22 @@ router.post(
       };
       if (!session.meta || session.meta.status !== "open") {
         return next(ConflictError("session is not open"));
+      }
+
+      // Cap room size at MAX_SESSION_PARTICIPANTS (host + 3 invitees).
+      // RTDB has no atomic increment-with-bound, so we accept a tiny
+      // race where two simultaneous joins both pass the check — for a
+      // 4-cap that's acceptable. Existing participants (re-join after
+      // refresh) are not counted against the cap.
+      const existingParticipants = session.participants ?? {};
+      const isReJoin = !!existingParticipants[uid];
+      const participantCount = Object.keys(existingParticipants).length;
+      if (!isReJoin && participantCount >= MAX_SESSION_PARTICIPANTS) {
+        return next(
+          ConflictError(
+            `session is full (max ${MAX_SESSION_PARTICIPANTS} participants)`,
+          ),
+        );
       }
 
       // Anyone authenticated with the link can join — link-only access

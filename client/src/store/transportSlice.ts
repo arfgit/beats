@@ -111,7 +111,6 @@ export const createTransportSlice: StateCreator<
       try {
         if (rawCtx.state === "suspended") await rawCtx.resume();
       } catch (err) {
-         
         console.warn("[audio] resume failed", err);
       }
       if (rawCtx.state === "running") {
@@ -155,6 +154,12 @@ export const createTransportSlice: StateCreator<
     },
 
     play: async () => {
+      // Capture the session flags BEFORE any await — applyingRemote
+      // can flip back to false after the local apply finishes, but
+      // we only want to skip the emit when this play() was triggered
+      // by a peer's broadcast.
+      const sessionBefore = get().collab.session;
+      const fromRemote = sessionBefore.applyingRemote;
       await get().ensureEngineStarted();
       // Flush any in-progress pattern edits back into the selected cell
       // before starting — otherwise the matrix controller would begin
@@ -172,14 +177,22 @@ export const createTransportSlice: StateCreator<
           isRecordingPlayback: false,
         },
       }));
+      if (!fromRemote && sessionBefore.id && sessionBefore.role === "editor") {
+        get().emitEdit({ kind: "transport/play" });
+      }
       track("play");
     },
 
     stop: () => {
       if (!audioEngine.isStarted()) return;
+      const session = get().collab.session;
+      const fromRemote = session.applyingRemote;
       matrixController?.stop();
       set((s) => ({ transport: { ...s.transport, isPlaying: false } }));
       track("stop");
+      if (!fromRemote && session.id && session.role === "editor") {
+        get().emitEdit({ kind: "transport/stop" });
+      }
     },
 
     togglePlay: async () => {

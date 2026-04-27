@@ -539,6 +539,14 @@ export const createMatrixSlice: StateCreator<
               }
               return;
             }
+            case "transport/play":
+            case "transport/stop": {
+              // Transport ops are intercepted by collabSlice's apply
+              // path and routed to the local play/stop actions — they
+              // never reach this switch in practice. The cases are
+              // here only to keep the exhaustiveness check happy.
+              return;
+            }
             default: {
               const _exhaustive: never = op;
               void _exhaustive;
