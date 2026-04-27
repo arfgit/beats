@@ -387,6 +387,28 @@ export function MatrixGrid() {
                 </Tooltip>
               </div>
               <CellPreview cell={cell} />
+              {peersHere.length > 0 && (
+                <div
+                  className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex max-w-[calc(100%-12px)] items-center gap-1 rounded-full px-1.5 py-0.5 backdrop-blur-sm"
+                  style={{
+                    backgroundColor: `${peersHere[0]!.color}22`,
+                    boxShadow: `inset 0 0 0 1px ${peersHere[0]!.color}`,
+                  }}
+                  aria-hidden
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: peersHere[0]!.color }}
+                  />
+                  <span
+                    className="truncate font-mono text-[9px] uppercase tracking-widest"
+                    style={{ color: peersHere[0]!.color }}
+                  >
+                    {peersHere[0]!.name}
+                    {peersHere.length > 1 && ` +${peersHere.length - 1}`}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-[9px] text-ink-muted font-mono">
                   {stepsActive}/32
