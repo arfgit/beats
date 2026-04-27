@@ -489,6 +489,17 @@ export const createMatrixSlice: StateCreator<
               track.sampleId = null;
               track.sampleVersion = null;
               track.sampleName = null;
+              // Match the local clearTrackSample behavior: deactivate
+              // every step on the row and strip per-step sample
+              // snapshots. Without this, peers were left with lit
+              // steps that had no sample to play — visually wrong
+              // and audibly silent.
+              for (const step of track.steps) {
+                step.active = false;
+                delete step.sampleId;
+                delete step.sampleVersion;
+                delete step.sampleName;
+              }
               touchedCellId = op.cellId;
               return;
             }
@@ -498,7 +509,37 @@ export const createMatrixSlice: StateCreator<
                 (t) => t.id === op.trackId,
               );
               if (!track) return;
-              for (const step of track.steps) step.active = op.active;
+              // When activating, mirror the local setAllStepsOnTrack
+              // behavior of pinning the row's current sample onto
+              // each newly-active step. Without this, remote peers
+              // see active steps with no sample snapshot and the
+              // labels appear blank or stale.
+              for (const step of track.steps) {
+                step.active = op.active;
+                if (op.active) {
+                  if (track.sampleId && track.sampleVersion != null) {
+                    step.sampleId = track.sampleId;
+                    step.sampleVersion = track.sampleVersion;
+                    step.sampleName = track.sampleName ?? null;
+                  }
+                } else {
+                  delete step.sampleId;
+                  delete step.sampleVersion;
+                  delete step.sampleName;
+                }
+              }
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/resetMixer": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              track.gain = 0.8;
+              track.muted = false;
+              track.soloed = false;
               touchedCellId = op.cellId;
               return;
             }

@@ -337,14 +337,20 @@ export const createPatternSlice: StateCreator<
     });
   },
 
-  resetTrackMixer: (trackId) =>
+  resetTrackMixer: (trackId) => {
     recordCommand(get, set, "reset mixer", (draft) => {
       const track = draft.tracks.find((t) => t.id === trackId);
       if (!track) return;
       track.gain = 0.8;
       track.muted = false;
       track.soloed = false;
-    }),
+    });
+    get().emitEdit({
+      kind: "track/resetMixer",
+      cellId: get().selectedCellId,
+      trackId,
+    });
+  },
 
   clearTrackSample: (trackId) => {
     recordCommand(get, set, "clear sample", (draft) => {

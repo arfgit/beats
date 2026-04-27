@@ -73,6 +73,10 @@ export type EditOp =
       trackId: string;
       active: boolean;
     }
+  // Composite reset of gain + mute + solo to defaults. Wired as a
+  // single op so peers don't have to interpret three sequential ops
+  // as a "reset" — clearer intent + atomic apply.
+  | { kind: "track/resetMixer"; cellId: string; trackId: string }
   | { kind: "pattern/setBpm"; bpm: number }
   | { kind: "pattern/setMasterGain"; gain: number }
   | {
