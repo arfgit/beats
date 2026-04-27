@@ -132,17 +132,12 @@ export function AppShell() {
           {/* Desktop auth — hidden below sm */}
           <div className="hidden sm:flex items-center gap-3 shrink-0">
             {status === "authed" && user ? (
-              <>
-                <NavLink
-                  to="/profile"
-                  className="text-xs text-ink-dim font-mono truncate max-w-[160px] hover:text-ink transition-colors duration-200 ease-in motion-reduce:transition-none"
-                >
-                  {user.displayName}
-                </NavLink>
-                <Button variant="ghost" onClick={() => void signOut()}>
-                  sign out
-                </Button>
-              </>
+              <DesktopUserMenu
+                displayName={user.displayName}
+                onSignOut={() => void signOut()}
+                onOpenBuddies={() => setBuddyDrawerOpen(true)}
+                incomingRequestCount={incomingRequestCount}
+              />
             ) : status === "loading" ? (
               <span className="text-xs text-ink-muted">…</span>
             ) : status === "error" ? (
@@ -327,6 +322,156 @@ export function AppShell() {
         onClose={() => setBuddyDrawerOpen(false)}
       />
       <BuddyNavigationBridge />
+    </div>
+  );
+}
+
+/**
+ * Desktop user dropdown — shows on click of the username button. The
+ * mobile slide-in sidebar has its own copy of the same affordances
+ * (buddy code chip + buddies + sign out) so this dropdown is purely
+ * the desktop surface.
+ *
+ * Click-outside + ESC close + focus management lives here. The
+ * trigger is a real `<button>` with `aria-expanded` + `aria-haspopup`
+ * so screen readers announce it as a menu opener.
+ */
+function DesktopUserMenu({
+  displayName,
+  onSignOut,
+  onOpenBuddies,
+  incomingRequestCount,
+}: {
+  displayName: string;
+  onSignOut: () => void;
+  onOpenBuddies: () => void;
+  incomingRequestCount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (evt: MouseEvent) => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(evt.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    const onKey = (evt: KeyboardEvent) => {
+      if (evt.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`account menu for ${displayName}`}
+        className={clsx(
+          "h-9 px-3 flex items-center gap-2 rounded border bg-bg-panel-2 font-mono text-xs",
+          "transition-colors duration-150 motion-reduce:transition-none",
+          open
+            ? "border-neon-violet text-ink"
+            : "border-grid text-ink-dim hover:border-ink-dim hover:text-ink",
+        )}
+      >
+        <span className="truncate max-w-[160px]">{displayName}</span>
+        {incomingRequestCount > 0 && (
+          <span
+            aria-hidden
+            className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-neon-violet text-bg-void text-[10px] font-medium"
+            title={`${incomingRequestCount} pending buddy request${incomingRequestCount === 1 ? "" : "s"}`}
+          >
+            {incomingRequestCount}
+          </span>
+        )}
+        <span
+          aria-hidden
+          className={clsx(
+            "text-ink-muted transition-transform duration-150 motion-reduce:transition-none",
+            open && "rotate-180",
+          )}
+        >
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="account menu"
+          className="absolute right-0 top-full mt-2 w-56 rounded border border-neon-violet bg-bg-panel shadow-[var(--glow-violet)] py-2 z-50"
+        >
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-ink-muted font-mono">
+            signed in
+          </div>
+          <div className="px-3 pb-2 text-sm text-ink font-mono truncate">
+            {displayName}
+          </div>
+          <div className="px-3 pb-2">
+            <BuddyCodeChip />
+          </div>
+          <div className="border-t border-grid my-1" />
+          <NavLink
+            to="/profile"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+            className={({ isActive }) =>
+              clsx(
+                "block px-3 py-2 text-sm font-mono transition-colors duration-150 motion-reduce:transition-none",
+                isActive
+                  ? "text-neon-violet"
+                  : "text-ink-dim hover:bg-bg-panel-2 hover:text-ink",
+              )
+            }
+          >
+            profile
+          </NavLink>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onOpenBuddies();
+            }}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm font-mono text-ink-dim hover:bg-bg-panel-2 hover:text-ink transition-colors duration-150 motion-reduce:transition-none"
+          >
+            <span>buddies</span>
+            {incomingRequestCount > 0 && (
+              <span
+                aria-hidden
+                className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-neon-violet text-bg-void text-[10px] font-medium"
+              >
+                {incomingRequestCount}
+              </span>
+            )}
+          </button>
+          <div className="border-t border-grid my-1" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onSignOut();
+            }}
+            className="w-full text-left px-3 py-2 text-sm font-mono text-ink-dim hover:bg-bg-panel-2 hover:text-neon-red transition-colors duration-150 motion-reduce:transition-none"
+          >
+            sign out
+          </button>
+        </div>
+      )}
     </div>
   );
 }
