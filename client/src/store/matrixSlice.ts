@@ -136,6 +136,10 @@ export const createMatrixSlice: StateCreator<
       // previous cell would land on the wrong tracks. Clearing history is
       // the safe minimum — per-cell history is a future improvement.
       get().clearHistory();
+      // Broadcast the new focus to peers so the cell-highlight overlay
+      // on the matrix grid actually has data. Without this, peers see
+      // each other's cursors but can't tell which cell anyone is on.
+      get().focusCell(id, null, null);
     },
 
     setActiveCellId: (id) => {
@@ -213,6 +217,7 @@ export const createMatrixSlice: StateCreator<
     },
 
     clearAllCellSteps: () => {
+      const cellIds = get().matrix.cells.map((c) => c.id);
       set((s) => ({
         matrix: produce(s.matrix, (draft) => {
           for (const cell of draft.cells) {
@@ -226,6 +231,13 @@ export const createMatrixSlice: StateCreator<
       // grid UI shows the cleared state immediately (matrix mirror alone
       // leaves the pattern slice stale until the next cell-switch).
       get().loadCellIntoPattern(get().selectedCellId);
+      // Broadcast the wipe so peers in a live session see it. Fan out
+      // one op per cell using the existing pattern/clearAllSteps op
+      // rather than introducing a new bulk EditOp — keeps the apply
+      // path identical between host and remote peers.
+      for (const cellId of cellIds) {
+        get().emitEdit({ kind: "pattern/clearAllSteps", cellId });
+      }
     },
 
     setCellName: (cellId, name) => {
@@ -254,13 +266,20 @@ export const createMatrixSlice: StateCreator<
       // when the matrix starts with cell 0 enabled by default — the
       // first click would leave the user with "every cell except the
       // first," which nobody asks for.
-      const anyEnabled = get().matrix.cells.some((c) => c.enabled);
+      const cells = get().matrix.cells;
+      const anyEnabled = cells.some((c) => c.enabled);
       const next = !anyEnabled;
+      const cellIds = cells.map((c) => c.id);
       set((s) => ({
         matrix: produce(s.matrix, (draft) => {
           for (const cell of draft.cells) cell.enabled = next;
         }),
       }));
+      // Broadcast so live-session peers see the bulk flip. Per-cell op
+      // re-uses the existing cell/setEnabled apply path.
+      for (const cellId of cellIds) {
+        get().emitEdit({ kind: "cell/setEnabled", cellId, enabled: next });
+      }
     },
 
     setTrackKind: (cellId, trackId, kind) => {

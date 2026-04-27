@@ -2,15 +2,21 @@ import { Router, type NextFunction, type Response } from "express";
 import { nanoid } from "nanoid";
 import {
   COLLAB_PROTOCOL_VERSION,
+  DEFAULT_SESSION_PERMISSIONS,
   type Project,
   type SessionMeta,
   type SessionParticipant,
+  type SessionPermissions,
 } from "@beats/shared";
 import { db, rtdb, adminAuth } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
 import { validateBody } from "../lib/validate.js";
-import { createSessionBody, sessionEmptyBody } from "../lib/schemas.js";
+import {
+  createSessionBody,
+  sessionEmptyBody,
+  updateSessionPermissionsBody,
+} from "../lib/schemas.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
 
 const router = Router();
@@ -90,15 +96,18 @@ router.post(
 
       const sessionId = nanoid(12);
       const now = Date.now();
+      const ownerName = await readDisplayName(uid);
       const meta: SessionMeta = {
         v: COLLAB_PROTOCOL_VERSION,
         sessionId,
         projectId,
+        projectTitle: project.title,
         ownerUid: uid,
+        ownerDisplayName: ownerName,
         createdAt: now,
         status: "open",
+        permissions: { ...DEFAULT_SESSION_PERMISSIONS },
       };
-      const ownerName = await readDisplayName(uid);
       const ownerColor = pickColorForUid(uid);
       const ownerParticipant: SessionParticipant = {
         v: COLLAB_PROTOCOL_VERSION,
@@ -213,6 +222,38 @@ router.post(
       await sessionRef.child(`participants/${uid}`).remove();
       await sessionRef.child(`presence/${uid}`).remove();
       res.json({ data: { ok: true } });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.patch(
+  "/sessions/:id/permissions",
+  requireAuth,
+  sessionLimiter,
+  validateBody(updateSessionPermissionsBody),
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { uid } = req.auth!;
+      const sessionId = req.params.id!;
+      const sessionRef = rtdb.ref(`sessions/${sessionId}`);
+      const metaSnap = await sessionRef.child("meta").get();
+      if (!metaSnap.exists()) return next(NotFoundError("session not found"));
+      const meta = metaSnap.val() as SessionMeta;
+      if (meta.ownerUid !== uid) {
+        return next(
+          ForbiddenError("only the session host can change permissions"),
+        );
+      }
+      const next$ = req.body as Partial<SessionPermissions>;
+      const merged: SessionPermissions = {
+        ...DEFAULT_SESSION_PERMISSIONS,
+        ...(meta.permissions ?? {}),
+        ...next$,
+      };
+      await sessionRef.child("meta/permissions").set(merged);
+      res.json({ data: { permissions: merged } });
     } catch (err) {
       next(err);
     }

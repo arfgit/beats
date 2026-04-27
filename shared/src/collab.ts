@@ -123,15 +123,51 @@ export interface PresenceState {
   lastSeen: number;
 }
 
+/**
+ * Host-controlled toggles that gate destructive / matrix-wide actions
+ * for non-host participants. Host can flip these live during the
+ * session via `PATCH /sessions/{id}/permissions`.
+ */
+export interface SessionPermissions {
+  /**
+   * When false, invitees can still toggle individual steps and edit
+   * cell-local content, but matrix-wide buttons (clear matrix,
+   * enable/disable all cells, seed demo) are disabled in their UI.
+   * Default is `false` (locked) so the host's beat is protected unless
+   * they explicitly open it up.
+   */
+  inviteesCanEditGlobal: boolean;
+}
+
+export const DEFAULT_SESSION_PERMISSIONS: SessionPermissions = {
+  inviteesCanEditGlobal: false,
+};
+
 /** Session metadata at `/sessions/{id}/meta`. */
 export interface SessionMeta {
   v: typeof COLLAB_PROTOCOL_VERSION;
   sessionId: string;
   projectId: string;
+  /**
+   * Project title at session start. Snapshotted here so non-collaborator
+   * invitees (who can't read the project doc directly) can still display
+   * "in <host>'s session: <title>" in the studio chrome. Stale if the
+   * host renames mid-session — acceptable for v1.
+   */
+  projectTitle: string;
   ownerUid: string;
+  /** Owner's display name. Same rationale as projectTitle — invitees
+   *  need a label without project read access. */
+  ownerDisplayName: string;
   createdAt: number;
   /** "open" while the session accepts joins; "ended" after the owner leaves. */
   status: "open" | "ended";
+  /**
+   * Host-controlled gating for invitee actions. Optional on the wire so
+   * an older client/session without the field still works — clients
+   * fall back to `DEFAULT_SESSION_PERMISSIONS` (locked).
+   */
+  permissions?: SessionPermissions;
 }
 
 /** Participant slot at `/sessions/{id}/participants/{uid}`. */

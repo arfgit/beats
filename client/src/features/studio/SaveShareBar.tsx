@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { DEFAULT_SESSION_PERMISSIONS } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -25,6 +26,24 @@ export function SaveShareBar() {
   const setIsPublic = useBeatsStore((s) => s.setIsPublic);
   const setTitle = useBeatsStore((s) => s.setTitle);
   const pushToast = useBeatsStore((s) => s.pushToast);
+  // Session-aware: when the user is an INVITEE in someone else's
+  // session, hide the save UI and show a read-only banner instead.
+  // Without this, invitees (who deliberately have project.current=null)
+  // would see the create-project flow with "untitled beat" prefilled,
+  // misleading them into thinking they can save the host's project as
+  // their own.
+  const sessionId = useBeatsStore((s) => s.collab.session.id);
+  const sessionMeta = useBeatsStore((s) => s.collab.session.meta);
+  const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
+  const setSessionPermissions = useBeatsStore((s) => s.setSessionPermissions);
+  const isInviteeInSession =
+    !!sessionId && !!sessionMeta && sessionMeta.ownerUid !== myUid;
+  const isHostInSession =
+    !!sessionId && !!sessionMeta && sessionMeta.ownerUid === myUid;
+  const inviteesCanEditGlobal =
+    sessionMeta?.permissions?.inviteesCanEditGlobal ??
+    DEFAULT_SESSION_PERMISSIONS.inviteesCanEditGlobal;
+  const [permissionsBusy, setPermissionsBusy] = useState(false);
   const [draftTitle, setDraftTitle] = useState("untitled beat");
   const [inviteOpen, setInviteOpen] = useState(false);
   // Local title draft decouples the controlled input from the server-backed
@@ -47,6 +66,23 @@ export function SaveShareBar() {
     return (
       <div className="border border-grid rounded p-3 bg-bg-panel/60 text-xs text-ink-muted">
         sign in to save projects.
+      </div>
+    );
+  }
+
+  if (isInviteeInSession && sessionMeta) {
+    return (
+      <div className="border border-neon-violet/60 rounded p-3 bg-neon-violet/5 flex flex-wrap items-center gap-3">
+        <span className="text-[10px] uppercase tracking-widest text-neon-violet font-mono">
+          live · guest
+        </span>
+        <span className="flex-1 min-w-[200px] text-sm text-ink font-mono truncate">
+          {sessionMeta.projectTitle}
+        </span>
+        <span className="text-xs text-ink-muted">
+          hosted by{" "}
+          <span className="text-ink">{sessionMeta.ownerDisplayName}</span>
+        </span>
       </div>
     );
   }
@@ -103,6 +139,44 @@ export function SaveShareBar() {
               invite
             </Button>
           </Tooltip>
+          {isHostInSession && (
+            <Tooltip
+              label={
+                inviteesCanEditGlobal
+                  ? "invitees can clear matrix and run other matrix-wide actions — click to lock"
+                  : "invitees can edit cells but can't clear or seed the matrix — click to unlock"
+              }
+            >
+              <button
+                type="button"
+                aria-pressed={!inviteesCanEditGlobal}
+                aria-label={
+                  inviteesCanEditGlobal
+                    ? "lock global actions for invitees"
+                    : "unlock global actions for invitees"
+                }
+                disabled={permissionsBusy}
+                onClick={async () => {
+                  setPermissionsBusy(true);
+                  await setSessionPermissions({
+                    inviteesCanEditGlobal: !inviteesCanEditGlobal,
+                  });
+                  setPermissionsBusy(false);
+                }}
+                className={clsx(
+                  "h-9 px-3 rounded border text-[10px] uppercase tracking-widest font-mono",
+                  "transition-colors duration-200 ease-in motion-reduce:transition-none",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet",
+                  "disabled:opacity-60 disabled:cursor-wait",
+                  inviteesCanEditGlobal
+                    ? "border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet"
+                    : "border-neon-violet text-neon-violet bg-neon-violet/10",
+                )}
+              >
+                {inviteesCanEditGlobal ? "🔓 open jam" : "🔒 host only"}
+              </button>
+            </Tooltip>
+          )}
           <InviteDialog
             open={inviteOpen}
             onClose={() => setInviteOpen(false)}

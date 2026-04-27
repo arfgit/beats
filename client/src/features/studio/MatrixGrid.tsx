@@ -1,7 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
-import type { MixerCell, TrackKind } from "@beats/shared";
+import {
+  DEFAULT_SESSION_PERMISSIONS,
+  type MixerCell,
+  type TrackKind,
+} from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { InfoIcon } from "@/components/ui/InfoIcon";
@@ -53,11 +57,28 @@ export function MatrixGrid() {
   // depth exceeded") because each render produces a new identity even
   // when no state changed.
   const sessionId = useBeatsStore((s) => s.collab.session.id);
+  const sessionMeta = useBeatsStore((s) => s.collab.session.meta);
   const sessionPresence = useBeatsStore((s) => s.collab.session.presence);
   const sessionParticipants = useBeatsStore(
     (s) => s.collab.session.participants,
   );
   const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
+  // Live-session flag drives "disable destructive ops" gating: seed
+  // demo bulk-replaces the matrix without per-step EditOps so peers
+  // wouldn't see it; clearing during a jam is a foot-gun. Both still
+  // behind a confirm modal in solo mode but blocked entirely in collab.
+  const inSession = sessionId !== null;
+  // Invitee = in a session but not the host. When the host has locked
+  // global actions (default), invitees see disabled clear/enable-all
+  // controls with a "host locked" tooltip. The host can flip the toggle
+  // live from SaveShareBar; metaHandler streams the change here.
+  const isInviteeInSession =
+    inSession && !!sessionMeta && sessionMeta.ownerUid !== myUid;
+  const inviteesCanEditGlobal =
+    sessionMeta?.permissions?.inviteesCanEditGlobal ??
+    DEFAULT_SESSION_PERMISSIONS.inviteesCanEditGlobal;
+  const globalActionsLocked = isInviteeInSession && !inviteesCanEditGlobal;
+  const [showClearModal, setShowClearModal] = useState(false);
   const peerFocusByCell = useMemo(() => {
     const out: Record<
       string,
@@ -144,34 +165,52 @@ export function MatrixGrid() {
           </p>
           <Tooltip
             label={
-              anyCellEnabled
-                ? "disable every cell in the matrix"
-                : "enable every cell in the matrix"
+              globalActionsLocked
+                ? "host has locked matrix-wide actions for invitees"
+                : anyCellEnabled
+                  ? "disable every cell in the matrix"
+                  : "enable every cell in the matrix"
             }
           >
             <button
               type="button"
               onClick={() => toggleAllCellsEnabled()}
-              className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none"
+              disabled={globalActionsLocked}
+              className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
             >
               {anyCellEnabled ? "disable all" : "enable all"}
             </button>
           </Tooltip>
-          <Tooltip label="deactivate every step on every row in every cell">
+          <Tooltip
+            label={
+              globalActionsLocked
+                ? "host has locked matrix-wide actions for invitees"
+                : "deactivate every step on every row in every cell"
+            }
+          >
             <button
               type="button"
-              onClick={() => clearAllCellSteps()}
-              className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-red hover:text-neon-red text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none"
+              onClick={() => setShowClearModal(true)}
+              disabled={globalActionsLocked}
+              className="h-7 px-2 rounded border border-grid text-ink-muted hover:border-neon-red hover:text-neon-red text-[10px] uppercase tracking-widest font-mono transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-grid disabled:hover:text-ink-muted"
             >
               clear matrix
             </button>
           </Tooltip>
-          <Tooltip label="overwrite the matrix with a pre-programmed 9-cell beat">
+          <Tooltip
+            label={
+              globalActionsLocked
+                ? "host has locked matrix-wide actions for invitees"
+                : inSession
+                  ? "seed demo is disabled while a live session is active"
+                  : "overwrite the matrix with a pre-programmed 9-cell beat"
+            }
+          >
             <button
               type="button"
               onClick={() => setShowSeedModal(true)}
-              disabled={seeding}
-              className="h-7 px-2 rounded border border-neon-violet/70 text-neon-violet text-[10px] uppercase tracking-widest font-mono hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-50 disabled:cursor-wait"
+              disabled={seeding || inSession || globalActionsLocked}
+              className="h-7 px-2 rounded border border-neon-violet/70 text-neon-violet text-[10px] uppercase tracking-widest font-mono hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {seeding ? "seeding…" : "seed demo ✨"}
             </button>
@@ -188,6 +227,15 @@ export function MatrixGrid() {
                 }
               }}
               onCancel={() => setShowSeedModal(false)}
+            />
+          )}
+          {showClearModal && (
+            <ClearMatrixConfirmModal
+              onConfirm={() => {
+                setShowClearModal(false);
+                clearAllCellSteps();
+              }}
+              onCancel={() => setShowClearModal(false)}
             />
           )}
         </div>
@@ -431,6 +479,78 @@ function SeedConfirmModal({
           className="h-8 px-3 rounded border border-neon-violet/70 font-mono text-[10px] uppercase tracking-widest text-neon-violet hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet"
         >
           overwrite
+        </button>
+      </div>
+    </dialog>,
+    document.body,
+  );
+}
+
+/**
+ * Confirmation for "clear matrix" — same dialog pattern as the seed
+ * confirm but with destructive copy + a red action button. Especially
+ * important in collab mode (mis-click would wipe everyone's work) but
+ * worth a confirm in solo too since the action is irreversible.
+ */
+function ClearMatrixConfirmModal({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    el.showModal();
+    return () => {
+      if (el.open) el.close();
+    };
+  }, []);
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
+      aria-labelledby={titleId}
+      className={clsx(
+        "fixed m-auto rounded-lg border border-neon-red/70 bg-bg-panel p-6 shadow-xl shadow-black/60",
+        "w-full max-w-sm",
+        "backdrop:bg-bg-void/75 backdrop:backdrop-blur-sm",
+        "focus-visible:outline-none",
+      )}
+    >
+      <h3
+        id={titleId}
+        className="mb-1 font-mono text-sm uppercase tracking-widest text-neon-red"
+      >
+        clear matrix?
+      </h3>
+      <p className="mb-5 text-[11px] text-ink-muted">
+        Every step in every cell of every row will be deactivated. This cannot
+        be undone.
+      </p>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          autoFocus
+          className="h-8 px-3 rounded border border-grid font-mono text-[10px] uppercase tracking-widest text-ink-muted hover:border-ink-dim hover:text-ink transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet"
+        >
+          cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="h-8 px-3 rounded border border-neon-red/70 font-mono text-[10px] uppercase tracking-widest text-neon-red hover:bg-neon-red/10 transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-red"
+        >
+          clear
         </button>
       </div>
     </dialog>,

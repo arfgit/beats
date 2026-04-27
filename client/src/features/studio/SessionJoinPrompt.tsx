@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
+import {
+  forgetActiveSession,
+  getRememberedSession,
+  rememberActiveSession,
+} from "@/lib/session-memory";
 import { Button } from "@/components/ui/Button";
 
 /**
@@ -43,6 +48,31 @@ export function SessionJoinPrompt() {
   useEffect(() => {
     setDismissed(false);
   }, [sessionParam]);
+
+  // Silent rejoin: if this tab already accepted the invite in a prior
+  // life (refresh / nav-away-and-back), skip the prompt and re-attach
+  // listeners by calling joinSession directly. The server endpoint is
+  // idempotent on participants so re-writing the same uid is fine. The
+  // user already opted in once; re-prompting after a refresh feels
+  // broken.
+  useEffect(() => {
+    if (!sessionParam || !myUid || !routeProjectId) return;
+    if (activeSessionId === sessionParam) return; // already in
+    const remembered = getRememberedSession(routeProjectId);
+    if (remembered !== sessionParam) return;
+    let cancelled = false;
+    void (async () => {
+      const ok = await joinSession(sessionParam);
+      if (!ok && !cancelled) {
+        // Stored memory is stale (server expired the session, etc.) —
+        // clear it so the next visit re-prompts cleanly.
+        forgetActiveSession(routeProjectId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionParam, myUid, routeProjectId, activeSessionId, joinSession]);
 
   if (!sessionParam || dismissed) return null;
   if (!myUid) {
@@ -116,15 +146,14 @@ export function SessionJoinPrompt() {
         pushToast("error", "couldn't join — link may have expired");
       } else {
         pushToast("success", "joined live session");
+        // Remember the accept so a refresh in this tab silently
+        // re-joins instead of re-prompting.
+        if (routeProjectId) {
+          rememberActiveSession(routeProjectId, sessionParam);
+        }
       }
     } finally {
       setBusy(false);
-      // Mark dismissed (instead of stripping the URL) so the prompt
-      // doesn't re-render. Leaving the URL intact means a refresh
-      // doesn't re-fire the Studio mount cleanup, which would clobber
-      // the snapshot we just applied. The prompt's own
-      // `activeSessionId === sessionParam` short-circuit handles the
-      // "already in this session" case on refresh.
       setDismissed(true);
     }
   };

@@ -27,6 +27,7 @@ import {
 import { useCursorBroadcast } from "@/features/studio/useCursorBroadcast";
 import { SessionInviteDialog } from "@/features/studio/SessionInviteDialog";
 import { SessionJoinPrompt } from "@/features/studio/SessionJoinPrompt";
+import { getRememberedSession } from "@/lib/session-memory";
 
 export default function StudioRoute() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -65,6 +66,30 @@ export default function StudioRoute() {
   useSpaceToPlay();
   useUndoShortcuts();
   useDisarmOnEscape();
+  // Auto-prime audio on the first user gesture inside the studio.
+  // Browser autoplay policy requires a user gesture before the
+  // AudioContext can resume; without this hook the user has to click
+  // the explicit "prime audio" button before anything sounds. With
+  // it, ANY click/keypress in the studio (toggling a step, picking a
+  // sample, etc.) primes audio in the same gesture. Listener removes
+  // itself on first fire so we don't repeatedly call ensureEngineStarted.
+  useEffect(() => {
+    if (audioReady) return;
+    let primed = false;
+    const onGesture = () => {
+      if (primed) return;
+      primed = true;
+      void ensureEngineStarted();
+      window.removeEventListener("pointerdown", onGesture, true);
+      window.removeEventListener("keydown", onGesture, true);
+    };
+    window.addEventListener("pointerdown", onGesture, true);
+    window.addEventListener("keydown", onGesture, true);
+    return () => {
+      window.removeEventListener("pointerdown", onGesture, true);
+      window.removeEventListener("keydown", onGesture, true);
+    };
+  }, [audioReady, ensureEngineStarted]);
   // Surface ref drives both local cursor broadcast (we report normalized
   // [0,1] coords against this rect) and remote cursor projection (peers'
   // normalized coords project back into this rect's pixel space). Same
@@ -75,6 +100,27 @@ export default function StudioRoute() {
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const liveSessionId = useBeatsStore((s) => s.collab.session.id);
   const loadedProjectId = useBeatsStore((s) => s.project.current?.id ?? null);
+  const joinSession = useBeatsStore((s) => s.joinSession);
+  // Global close-all-popups signal — bumped on invite accept etc.
+  const popupCloseTrigger = useBeatsStore((s) => s.ui.popupCloseTrigger);
+  useEffect(() => {
+    if (popupCloseTrigger === 0) return;
+    setSessionDialogOpen(false);
+  }, [popupCloseTrigger]);
+
+  // Refresh-survivability: if this tab was in a session for the
+  // current project before the refresh, silently re-attach. This
+  // covers the host's path (URL has no ?session= because they
+  // started, not joined) AND a stale invitee whose URL was
+  // already-stripped. Invitees with `?session=` go through
+  // SessionJoinPrompt's own silent-rejoin which uses the same memory.
+  useEffect(() => {
+    if (!authedUid || !projectId || joiningSessionId) return;
+    if (liveSessionId) return;
+    const remembered = getRememberedSession(projectId);
+    if (!remembered) return;
+    void joinSession(remembered);
+  }, [authedUid, projectId, joiningSessionId, liveSessionId, joinSession]);
 
   const tabIdRef = useRef<string>(nanoid(8));
 

@@ -286,6 +286,7 @@ export function SessionInviteDialog({ open, onClose }: Props) {
 function BuddiesPanel({ sessionId }: { sessionId: string }) {
   const buddies = useBeatsStore((s) => s.buddy.buddies);
   const onlineUids = useBeatsStore((s) => s.buddy.onlineUids);
+  const outgoingInvites = useBeatsStore((s) => s.buddy.outgoingInvites);
   const myCode = useBeatsStore((s) => s.buddy.myCode);
   const sendInvite = useBeatsStore((s) => s.sendInvite);
   const submitBuddyCode = useBeatsStore((s) => s.submitBuddyCode);
@@ -293,6 +294,16 @@ function BuddiesPanel({ sessionId }: { sessionId: string }) {
   const [inFlight, setInFlight] = useState<Set<string>>(new Set());
   const [draftCode, setDraftCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Tick once per second so countdowns re-render without each row
+  // owning its own interval. Cheap — only relevant when a panel is
+  // open AND there's at least one outgoing invite.
+  const [now, setNow] = useState(() => Date.now());
+  const hasOutgoing = Object.keys(outgoingInvites).length > 0;
+  useEffect(() => {
+    if (!hasOutgoing) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [hasOutgoing]);
 
   const buddyList = Object.values(buddies).sort((a, b) => {
     const aOnline = onlineUids[a.uid] ? 1 : 0;
@@ -366,6 +377,12 @@ function BuddiesPanel({ sessionId }: { sessionId: string }) {
           {buddyList.map((buddy) => {
             const online = !!onlineUids[buddy.uid];
             const pending = inFlight.has(buddy.uid);
+            const outgoing = outgoingInvites[buddy.uid];
+            const remaining = outgoing
+              ? Math.max(0, Math.ceil((outgoing.expiresAt - now) / 1000))
+              : 0;
+            const inviteOpen = !!outgoing && remaining > 0;
+            const inviteExpired = !!outgoing && remaining === 0;
             return (
               <li key={buddy.uid} className="flex items-center gap-2 text-xs">
                 <span
@@ -388,13 +405,35 @@ function BuddiesPanel({ sessionId }: { sessionId: string }) {
                 >
                   {buddy.displayName}
                 </span>
+                {inviteOpen && (
+                  <span
+                    className="text-[10px] font-mono text-ink-muted tabular-nums"
+                    aria-label={`invite expires in ${remaining}s`}
+                  >
+                    {Math.floor(remaining / 60)}:
+                    {String(remaining % 60).padStart(2, "0")}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => void onInvite(buddy.uid)}
-                  disabled={!online || pending}
-                  className="h-7 px-2 rounded border border-grid text-[10px] uppercase tracking-widest font-mono text-ink-muted hover:border-neon-violet hover:text-neon-violet transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={!online || pending || inviteOpen}
+                  className={clsx(
+                    "h-7 px-2 rounded border text-[10px] uppercase tracking-widest font-mono transition-colors duration-150 motion-reduce:transition-none disabled:opacity-40 disabled:cursor-not-allowed",
+                    inviteExpired
+                      ? "border-neon-sun/70 text-neon-sun hover:bg-neon-sun/10"
+                      : "border-grid text-ink-muted hover:border-neon-violet hover:text-neon-violet",
+                  )}
                 >
-                  {pending ? "…" : online ? "invite" : "offline"}
+                  {pending
+                    ? "…"
+                    : !online
+                      ? "offline"
+                      : inviteOpen
+                        ? "sent"
+                        : inviteExpired
+                          ? "re-invite"
+                          : "invite"}
                 </button>
               </li>
             );

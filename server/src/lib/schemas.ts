@@ -224,6 +224,15 @@ export const sendInviteBody = z.object({
 // the server reads everything else from Firestore + RTDB.
 export const sessionEmptyBody = z.object({}).strict();
 
+// Session permissions PATCH — host toggles which destructive/global
+// actions invitees are allowed to take. All keys optional so the
+// payload can carry just the bit being flipped.
+export const updateSessionPermissionsBody = z
+  .object({
+    inviteesCanEditGlobal: z.boolean().optional(),
+  })
+  .strict();
+
 export const updateUserBody = z.object({
   displayName: z
     .string()

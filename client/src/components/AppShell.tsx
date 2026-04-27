@@ -38,6 +38,15 @@ export function AppShell() {
       Object.values(s.buddy.requests).filter((r) => r.direction === "incoming")
         .length,
   );
+  // Watch the global "close all popups" trigger — bumped when something
+  // significant happens elsewhere (e.g. user accepted an invite from
+  // a toast and we want the BuddyDrawer to stop occluding the studio).
+  const popupCloseTrigger = useBeatsStore((s) => s.ui.popupCloseTrigger);
+  useEffect(() => {
+    if (popupCloseTrigger === 0) return;
+    setBuddyDrawerOpen(false);
+    setMenuOpen(false);
+  }, [popupCloseTrigger]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();

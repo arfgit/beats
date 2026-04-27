@@ -71,6 +71,13 @@ export interface ProjectSlice {
   forkProject: () => Promise<Project | null>;
   setIsPublic: (isPublic: boolean) => Promise<void>;
   setTitle: (title: string) => Promise<void>;
+  /**
+   * Delete a project from Firestore. Owner-only on the server. Caller
+   * is responsible for confirm UX. If the deleted project happens to
+   * be the one currently loaded, the listener tear-down via
+   * clearProject is handled here.
+   */
+  deleteProject: (projectId: string) => Promise<boolean>;
   setLockOwner: (owner: boolean) => void;
   flushPendingQueue: () => Promise<void>;
 }
@@ -412,6 +419,27 @@ export const createProjectSlice: StateCreator<
 
   setLockOwner: (owner) => {
     set((s) => ({ project: { ...s.project, isLockOwner: owner } }));
+  },
+
+  deleteProject: async (projectId) => {
+    try {
+      await api.delete(`/projects/${projectId}`);
+      // If we just deleted the actively-loaded project, tear down the
+      // listener and reset to a fresh studio. Other delete cases
+      // (deleting a project from the sidebar that isn't loaded) leave
+      // the active project alone — Firestore will sync the deletion
+      // through the project list snapshot.
+      if (get().project.current?.id === projectId) {
+        get().clearProject();
+      }
+      get().pushToast("success", "project deleted");
+      return true;
+    } catch (err) {
+      const message =
+        err instanceof ApiCallError ? err.apiError.message : "delete failed";
+      get().pushToast("error", message);
+      return false;
+    }
   },
 
   flushPendingQueue: async () => {

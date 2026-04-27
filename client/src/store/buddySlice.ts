@@ -13,6 +13,7 @@ import {
   type DataSnapshot,
 } from "firebase/database";
 import {
+  INVITE_TTL_MS,
   type BuddyConnection,
   type BuddyRequest,
   type IncomingInvite,
@@ -24,6 +25,7 @@ import {
   attachGlobalPresence,
   detachGlobalPresence,
 } from "@/lib/global-presence";
+import { forgetAllActiveSessions } from "@/lib/session-memory";
 import type { BeatsStore } from "./useBeatsStore";
 
 /**
@@ -31,6 +33,15 @@ import type { BeatsStore } from "./useBeatsStore";
  * Listeners attach when auth flips to "authed" and detach on sign out
  * (driven from `useBeatsStore.ts` mount glue).
  */
+export interface OutgoingInvite {
+  toUid: string;
+  toDisplayName: string;
+  sessionId: string;
+  inviteId: string;
+  sentAt: number;
+  expiresAt: number;
+}
+
 export interface BuddySlice {
   buddy: {
     myCode: string | null;
@@ -38,6 +49,13 @@ export interface BuddySlice {
     /** Pending requests in either direction; UI splits by `direction`. */
     requests: Record<string, BuddyRequest>;
     incomingInvites: Record<string, IncomingInvite>;
+    /**
+     * In-flight invites we've sent to other people. Keyed by recipient
+     * uid (only one outstanding invite per recipient at a time). Used
+     * to render a countdown next to the buddy and to gate the
+     * re-invite button until the previous invite expires.
+     */
+    outgoingInvites: Record<string, OutgoingInvite>;
     /** Set of buddy uids that have at least one open tab right now. */
     onlineUids: Record<string, true>;
     /**
@@ -67,6 +85,7 @@ function freshBuddy(): BuddySlice["buddy"] {
     buddies: {},
     requests: {},
     incomingInvites: {},
+    outgoingInvites: {},
     onlineUids: {},
     pendingNavigation: null,
     detach: [],
@@ -153,7 +172,29 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
 
   sendInvite: async (toUid, sessionId) => {
     try {
-      await api.post("/invites", { toUid, sessionId });
+      const result = await api.post<{ inviteId: string }>("/invites", {
+        toUid,
+        sessionId,
+      });
+      // Track the invite locally so the buddies panel can render a
+      // countdown + gate the re-invite button. The recipient's
+      // displayName comes from the buddy edge if we have one.
+      const buddy = get().buddy.buddies[toUid];
+      const now = Date.now();
+      const outgoing: OutgoingInvite = {
+        toUid,
+        toDisplayName: buddy?.displayName ?? toUid.slice(0, 8),
+        sessionId,
+        inviteId: result.inviteId,
+        sentAt: now,
+        expiresAt: now + INVITE_TTL_MS,
+      };
+      set((s) => ({
+        buddy: {
+          ...s.buddy,
+          outgoingInvites: { ...s.buddy.outgoingInvites, [toUid]: outgoing },
+        },
+      }));
       get().pushToast("success", "invite sent");
       return true;
     } catch (err) {
@@ -184,6 +225,10 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
       get().pushToast("error", "couldn't join — link may have expired");
       return;
     }
+    // Close any stale dialogs (BuddyDrawer, SessionInviteDialog from
+    // a project the user was just leaving, etc.) so the user lands
+    // cleanly in the host's session without modals lingering.
+    get().closeAllPopups();
     set((s) => ({
       buddy: {
         ...s.buddy,
@@ -331,6 +376,13 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
         toastedEventIds.add(eventId);
         if (event.type === "invite-declined") {
           get().pushToast("info", `${event.byDisplayName} declined the invite`);
+          // Clear the outgoing record so the UI can offer "re-invite"
+          // immediately instead of waiting for the TTL.
+          set((s) => {
+            if (!s.buddy.outgoingInvites[event.byUid]) return s;
+            const { [event.byUid]: _gone, ...rest } = s.buddy.outgoingInvites;
+            return { buddy: { ...s.buddy, outgoingInvites: rest } };
+          });
         } else if (event.type === "buddy-accepted") {
           get().pushToast(
             "success",
@@ -370,6 +422,7 @@ export const createBuddySlice: StateCreator<BeatsStore, [], [], BuddySlice> = (
     }
     onlineDetachByUid = new Map();
     toastedEventIds = new Set();
+    forgetAllActiveSessions();
     detachGlobalPresence();
     set(() => ({ buddy: freshBuddy() }));
   },
