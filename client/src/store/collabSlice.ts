@@ -445,18 +445,35 @@ function detachSessionListeners(get: () => BeatsStore): void {
 
 /**
  * Replace the local pattern + matrix with a snapshot from the session.
- * This is the "hydrate before we start consuming edits" step on join.
- * The patterned vs matrix split mirrors how the existing project
- * loader writes: pattern is the v1 flat shape, matrix is the v2 mixer.
+ * The server returns this on join — it IS the canonical state, so we
+ * apply unconditionally rather than gating on project.current. That
+ * matters for invitees who aren't on the project's collaborator list:
+ * we deliberately skip Firestore project hydration for them, leaving
+ * project.current null. The snapshot is the only state they get.
+ *
+ * The shape can be a v2 ProjectMatrix or a v1 Pattern — handle both.
  */
 function applyRemoteSnapshot(
   set: Parameters<StateCreator<BeatsStore, [], [], CollabSlice>>[0],
   get: () => BeatsStore,
-  projectId: string,
+  _projectId: string,
   state: unknown,
 ): void {
-  // Mark applyingRemote so any side-effecting subscribers don't try to
-  // emit our own snapshot back to peers.
+  if (!state || typeof state !== "object") return;
+  const candidate = state as {
+    schemaVersion?: number;
+    cells?: unknown;
+    tracks?: unknown;
+    bpm?: number;
+    sharedBpm?: number;
+    masterGain?: number;
+    stepCount?: number;
+    effects?: unknown;
+  };
+
+  // Mark applyingRemote so the broadcast-back guard suppresses
+  // emit-edit on the sets we're about to do (we don't want the join
+  // snapshot to re-broadcast as N edits).
   set((s) => ({
     collab: {
       ...s.collab,
@@ -464,27 +481,20 @@ function applyRemoteSnapshot(
     },
   }));
   try {
-    // Reuse the existing project hydration path so v1↔v2 migration
-    // and validation stay in one place.
-    const project = get().project.current;
-    if (project && project.id === projectId) {
-      // The project doc already covers metadata — we only care about
-      // the pattern/matrix shape here.
-      get().setPattern(
-        (state as never)?.["schemaVersion"] === 1
-          ? (state as never)
-          : project.pattern,
-      );
-      const matrixCandidate = state as {
-        schemaVersion?: number;
-        cells?: unknown;
-      };
-      if (
-        matrixCandidate?.schemaVersion === 2 &&
-        Array.isArray(matrixCandidate.cells)
-      ) {
-        get().setMatrix(state as never);
-      }
+    if (candidate.schemaVersion === 2 && Array.isArray(candidate.cells)) {
+      // v2 matrix snapshot. Apply matrix, then derive a flat pattern
+      // for the active cell so the row grid renders correctly. The
+      // existing setMatrix action moves selection to the first
+      // enabled cell.
+      get().setMatrix(state as never);
+      get().loadCellIntoPattern(get().selectedCellId);
+    } else if (
+      candidate.schemaVersion === 1 &&
+      Array.isArray(candidate.tracks)
+    ) {
+      // v1 legacy flat pattern. setPattern overwrites the local
+      // pattern — the matrix mirror keeps the project displayable.
+      get().setPattern(state as never);
     }
   } finally {
     set((s) => ({
