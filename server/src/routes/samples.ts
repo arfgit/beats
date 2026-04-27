@@ -58,6 +58,7 @@ router.post(
         durationMs: number;
         sourceFileName?: string;
         projectId?: string;
+        sessionId?: string;
       };
 
       // Defense in depth — Zod already enforces this, but the constants
@@ -74,8 +75,11 @@ router.post(
       }
 
       // If a projectId is supplied, the requester must be able to
-      // write the project (owner or collaborator). Prevents stamping
-      // someone else's project with your sample.
+      // write the project. Project owners + collaborators always pass.
+      // Session participants ALSO pass — joining a session by link
+      // gives you the same upload capability as a collaborator for
+      // the duration of the jam, so invitees can drop loops into the
+      // host's rig the same way real bands share a mixer board.
       if (body.projectId) {
         const projectSnap = await db
           .collection("projects")
@@ -88,10 +92,39 @@ router.post(
           ownerId: string;
           collaboratorIds?: string[];
         };
-        const canEdit =
+        let canEdit =
           project.ownerId === uid ||
           (Array.isArray(project.collaboratorIds) &&
             project.collaboratorIds.includes(uid));
+        if (!canEdit && body.sessionId) {
+          // Session-aware upload: same shape as the download-urls
+          // session check. Participant + matching project + 24h TTL.
+          const sessionSnap = await rtdb
+            .ref(`sessions/${body.sessionId}`)
+            .get();
+          if (sessionSnap.exists()) {
+            const session = sessionSnap.val() as {
+              meta?: {
+                projectId?: string;
+                status?: string;
+                createdAt?: number;
+              };
+              participants?: Record<string, unknown>;
+            };
+            const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+            const ageMs = session.meta?.createdAt
+              ? Date.now() - session.meta.createdAt
+              : Number.POSITIVE_INFINITY;
+            if (
+              session.meta?.status === "open" &&
+              session.meta.projectId === body.projectId &&
+              session.participants?.[uid] &&
+              ageMs <= SESSION_MAX_AGE_MS
+            ) {
+              canEdit = true;
+            }
+          }
+        }
         if (!canEdit) {
           return next(ForbiddenError("not a member of this project"));
         }

@@ -465,15 +465,24 @@ function attachSessionListeners(
   detach.push(() => off(metaRef, "value", metaHandler));
 
   // 4. Edit log — we use `child_added` rather than `value` so we
-  //    receive each push individually + in chronological order. The
-  //    `cutoff` ignores history that landed before we hooked up so
-  //    state-from-snapshot already accounts for it.
-  const cutoff = Date.now();
+  //    receive each push individually + in chronological order.
+  //    RTDB replays the existing log on subscribe, which is exactly
+  //    what we want: `/sessions/{id}/state` is set ONCE at session
+  //    creation and never updated, so the only way for a late-joiner
+  //    to catch up to current state is to replay every edit since
+  //    session start. Echo-of-own-emit is filtered by peerId.
+  //
+  //    Earlier code dropped any edit older than 30 seconds at attach
+  //    time, which silently desynced anyone who joined a long-running
+  //    session — they'd see the initial pattern + only the last 30s
+  //    of edits and diverge from peers permanently. If long-session
+  //    replay becomes a perf problem, the right fix is to periodically
+  //    snapshot state on the host side and use a push-key cutoff
+  //    against the snapshot's marker, NOT a wall-clock filter.
   const editsRef = dbRef(rtdb, `sessions/${sessionId}/edits`);
   const editsHandler = (snap: DataSnapshot) => {
     const message = snap.val() as EditMessage | null;
     if (!message) return;
-    if (message.clientTs < cutoff - 30_000) return; // stale tail
     const myUid = get().auth.user?.id;
     if (myUid && message.peerId === myUid) return; // echo of our own emit
     applyRemoteEdit(set, get, message);

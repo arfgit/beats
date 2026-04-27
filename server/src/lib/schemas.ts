@@ -192,6 +192,12 @@ export const sampleUploadUrlBody = z.object({
   // participants of that project can read it. Omit for legacy
   // user-scoped uploads (still supported for solo work).
   projectId: z.string().min(1).max(64).optional(),
+  // Optional active session id. Lets a session participant who
+  // isn't a project collaborator upload into the host's rig — the
+  // server verifies (a) the session is open, (b) the requester is
+  // a participant, (c) the session's projectId matches the upload
+  // target before granting upload permission.
+  sessionId: z.string().min(1).max(64).optional(),
 });
 
 // Finalize reads storagePath from the server-owned samples doc, so the

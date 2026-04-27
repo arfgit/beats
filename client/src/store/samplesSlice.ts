@@ -1,5 +1,13 @@
 import type { StateCreator } from "zustand";
-import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  type Unsubscribe,
+} from "firebase/firestore";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import type { SampleRef, TrackKind } from "@beats/shared";
 import { TRACK_KINDS } from "@beats/shared";
@@ -7,6 +15,13 @@ import { db, storage } from "@/lib/firebase";
 import { env } from "@/lib/env";
 import { api } from "@/lib/api";
 import type { BeatsStore } from "./useBeatsStore";
+
+// Module-scoped subscription handle for the project-scoped custom
+// sample listener. Lives outside the store because Zustand state
+// shouldn't carry function references that the equality check might
+// trip on. Re-subscribed on project change, torn down on signOut /
+// resetCustomSamples / clearProject.
+let customSamplesUnsub: Unsubscribe | null = null;
 
 interface KindState {
   status: "idle" | "loading" | "ready" | "error";
@@ -79,13 +94,27 @@ export const createSamplesSlice: StateCreator<
     try {
       let samples: SampleRef[];
       if (kind === "custom") {
-        // Project-scoped sample rig. When a project is loaded, show
-        // samples uploaded for THAT project. When none is loaded
-        // (anon / fresh studio), fall back to the user's owner-scoped
-        // legacy samples so solo work still has a sample list.
-        // status="ready" filter strips pending uploads that never
-        // finalized so abandoned uploads don't pollute the picker.
-        const projectId = get().project.current?.id ?? null;
+        // Project-scoped sample rig. Subscribe via onSnapshot so a
+        // sample uploaded by ANY peer (host or invitee) shows up in
+        // every participant's picker live — without that, the host
+        // would have to refresh after a teammate dropped a loop into
+        // the rig. Falls back to ownerId-scoped query for solo /
+        // anon mode.
+        // Pending uploads stripped client-side so abandoned uploads
+        // don't pollute the picker.
+        // Effective fallback for the session-as-invitee case: read
+        // from session meta when project.current is null.
+        const projectId =
+          get().project.current?.id ??
+          get().collab.session.meta?.projectId ??
+          null;
+        // Tear down any prior subscription before opening a new one
+        // so a project switch doesn't fan out into N concurrent
+        // listeners that all keep firing.
+        if (customSamplesUnsub) {
+          customSamplesUnsub();
+          customSamplesUnsub = null;
+        }
         let customQ;
         if (projectId) {
           customQ = query(
@@ -100,11 +129,33 @@ export const createSamplesSlice: StateCreator<
             where("ownerId", "==", uid),
           );
         }
-        const snap = await getDocs(customQ);
-        samples = snap.docs
+        // Initial fetch keeps the existing API contract (caller can
+        // await this to know the picker has data).
+        const initial = await getDocs(customQ);
+        samples = initial.docs
           .map((d) => d.data() as SampleRef & { status?: string })
           .filter((s) => s.status !== "pending")
           .sort((a, b) => b.createdAt - a.createdAt);
+        // Then attach a live listener so every later add/remove
+        // updates the slice without a manual refetch.
+        customSamplesUnsub = onSnapshot(
+          customQ,
+          (snap) => {
+            const next = snap.docs
+              .map((d) => d.data() as SampleRef & { status?: string })
+              .filter((s) => s.status !== "pending")
+              .sort((a, b) => b.createdAt - a.createdAt);
+            set((s) => ({
+              samples: {
+                ...s.samples,
+                custom: { status: "ready", samples: next, error: null },
+              },
+            }));
+          },
+          (err) => {
+            console.warn("[samples] custom listener error", err);
+          },
+        );
       } else {
         // Preferred: composite-indexed query with server-side ordering.
         const preferred = query(
@@ -239,6 +290,10 @@ export const createSamplesSlice: StateCreator<
   },
 
   resetCustomSamples: () => {
+    if (customSamplesUnsub) {
+      customSamplesUnsub();
+      customSamplesUnsub = null;
+    }
     set((s) => ({
       samples: { ...s.samples, custom: emptyKindState() },
     }));

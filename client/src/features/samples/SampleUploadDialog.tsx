@@ -161,11 +161,20 @@ export function SampleUploadDialog({ open, onClose, onUploaded }: Props) {
       const blob = encodeWav(sliced);
       const durationMs = Math.round(span);
 
-      // Stamp the sample with the currently-loaded project so it
-      // joins that project's rig instead of polluting every project
-      // the user opens. Solo / anon work uploads with no projectId
-      // and remains user-scoped (legacy behavior).
-      const projectId = useBeatsStore.getState().project.current?.id ?? null;
+      // Stamp the sample with the active project so it joins that
+      // project's rig instead of polluting every project the user
+      // opens. Three sources, in priority order:
+      //  1. project.current.id — the user is the host or collaborator
+      //  2. collab.session.meta.projectId — the user is an invitee
+      //     in someone else's session and wants to add to the host's
+      //     rig (server verifies session participation)
+      //  3. neither — anon / solo work, sample uploads user-scoped
+      const state = useBeatsStore.getState();
+      const projectId =
+        state.project.current?.id ??
+        state.collab.session.meta?.projectId ??
+        null;
+      const sessionId = state.collab.session.id ?? null;
       const signed = await api.post<{
         sampleId: string;
         uploadUrl: string;
@@ -175,6 +184,10 @@ export function SampleUploadDialog({ open, onClose, onUploaded }: Props) {
         durationMs,
         sourceFileName: stage.fileName,
         ...(projectId ? { projectId } : {}),
+        // Only include sessionId when the upload is happening in the
+        // context of a live session — server uses it to authorize
+        // invitees who aren't project collaborators.
+        ...(sessionId && projectId ? { sessionId } : {}),
       });
 
       setStage({ kind: "uploading", phase: "putting" });
