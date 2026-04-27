@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { Button } from "@/components/ui/Button";
@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/Button";
  */
 export function SessionJoinPrompt() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
   const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
   const activeSessionId = useBeatsStore((s) => s.collab.session.id);
@@ -130,6 +131,13 @@ export function SessionJoinPrompt() {
 
   const onDecline = () => {
     setDismissed(true);
+    // Decline → exit the session URL entirely. Navigating home is
+    // safer than just stripping `?session=` because that would keep
+    // the user mounted on /studio/:projectId, which (a) flashes them
+    // through the project-load branch and (b) exposes a project they
+    // explicitly declined to engage with. Clean break: take them to
+    // their own solo studio.
+    navigate("/", { replace: true });
   };
 
   return (

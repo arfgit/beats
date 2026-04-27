@@ -44,6 +44,35 @@ export function MatrixGrid() {
   const anyCellEnabled = useBeatsStore((s) =>
     s.matrix.cells.some((c) => c.enabled),
   );
+  // Live-session presence — pluck the focus.cellId from every active
+  // peer so we can paint their color on whatever cell they're sitting
+  // on. Stale presence (>8s) is filtered out to avoid ghost peers
+  // lingering after a tab close. Local user is excluded; you don't
+  // need to see your own dot.
+  const peerFocusByCell = useBeatsStore((s) => {
+    const myUid = s.auth.user?.id ?? null;
+    const presence = s.collab.session.presence;
+    const participants = s.collab.session.participants;
+    const out: Record<
+      string,
+      Array<{ uid: string; color: string; name: string }>
+    > = {};
+    if (!s.collab.session.id) return out;
+    const now = Date.now();
+    for (const [uid, p] of Object.entries(presence)) {
+      if (uid === myUid) continue;
+      if (!p?.focus?.cellId) continue;
+      if (now - (p.lastSeen ?? 0) > 8000) continue;
+      const participant = participants[uid];
+      const color = participant?.color ?? p.color ?? "#b84dff";
+      const name = participant?.displayName ?? p.displayName ?? "peer";
+      const cellId = p.focus.cellId;
+      const list = out[cellId] ?? [];
+      list.push({ uid, color, name });
+      out[cellId] = list;
+    }
+    return out;
+  });
   const [seeding, setSeeding] = useState(false);
   const [showSeedModal, setShowSeedModal] = useState(false);
 
@@ -162,6 +191,11 @@ export function MatrixGrid() {
           const isSelected = cell.id === selectedCellId;
           const isActive = cell.id === activeCellId;
           const isDragOver = dragOverIndex === index && dragFromIndex !== index;
+          const peersHere = peerFocusByCell[cell.id] ?? [];
+          // Use the FIRST peer's color for the cell's tinted ring so
+          // the dominant collaborator is obvious at a glance. The full
+          // list still renders as stacked dots in the corner.
+          const primaryPeerColor = peersHere[0]?.color ?? null;
           const stepsActive = cell.pattern.tracks.reduce(
             (sum, t) => sum + t.steps.filter((s) => s.active).length,
             0,
@@ -179,13 +213,23 @@ export function MatrixGrid() {
               role="button"
               tabIndex={0}
               aria-pressed={isSelected}
-              aria-label={`cell ${index + 1}${cell.enabled ? " enabled" : " disabled"}${isActive ? " playing" : ""}${isSelected ? " selected" : ""}`}
+              aria-label={`cell ${index + 1}${cell.enabled ? " enabled" : " disabled"}${isActive ? " playing" : ""}${isSelected ? " selected" : ""}${peersHere.length > 0 ? ` · ${peersHere.map((p) => p.name).join(", ")} editing here` : ""}`}
               onKeyUp={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   setSelectedCellId(cell.id);
                 }
               }}
+              style={
+                primaryPeerColor && !isSelected
+                  ? {
+                      // Subtle tint when a peer is here but we're not.
+                      // Selected (violet) wins on visual priority — the
+                      // user's own focus is what they care about most.
+                      boxShadow: `inset 0 0 0 2px ${primaryPeerColor}, 0 0 12px ${primaryPeerColor}40`,
+                    }
+                  : undefined
+              }
               className={clsx(
                 "relative cursor-grab active:cursor-grabbing select-none rounded border p-2 h-28 lg:h-32",
                 "flex flex-col",
@@ -202,6 +246,36 @@ export function MatrixGrid() {
                 isDragOver && "border-neon-sun border-dashed",
               )}
             >
+              {peersHere.length > 0 && (
+                <div
+                  className="absolute -top-1.5 -right-1.5 flex flex-row-reverse items-center gap-[-4px] z-10 pointer-events-none"
+                  aria-hidden
+                >
+                  {peersHere.slice(0, 3).map((p, i) => (
+                    <span
+                      key={p.uid}
+                      title={p.name}
+                      style={{
+                        backgroundColor: p.color,
+                        marginLeft: i === 0 ? 0 : -4,
+                        boxShadow: `0 0 6px ${p.color}, 0 0 0 1.5px var(--color-bg-panel, #0a0518)`,
+                      }}
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                    />
+                  ))}
+                  {peersHere.length > 3 && (
+                    <span
+                      className="ml-0.5 text-[8px] font-mono text-ink-muted leading-none"
+                      title={peersHere
+                        .slice(3)
+                        .map((p) => p.name)
+                        .join(", ")}
+                    >
+                      +{peersHere.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="flex items-start justify-between gap-1">
                 {/* Drag handle — always visible so the affordance is clear */}
                 <span
