@@ -151,9 +151,11 @@ export const createProjectSlice: StateCreator<
     get().project.unsubscribeRemote?.();
     // Project switch flushes the custom-sample cache so the picker
     // reflects the new project's rig (per-project sample scope) on
-    // the next fetchSamples('custom') call. Without this, switching
-    // from project A to B leaves A's samples visible.
-    get().resetCustomSamples();
+    // the next fetchSamples('custom') call. Done lazily inside the
+    // snapshot callback rather than upfront so the picker doesn't
+    // visibly flash empty between projects — we only flush once we
+    // see the snapshot is for a DIFFERENT project than what's
+    // currently loaded.
     try {
       const unsub = onSnapshot(
         doc(db, "projects", projectId),
@@ -170,6 +172,10 @@ export const createProjectSlice: StateCreator<
             return;
           }
           const project = snap.data() as Project;
+          const previousProjectId = get().project.current?.id ?? null;
+          if (previousProjectId !== project.id) {
+            get().resetCustomSamples();
+          }
           const { matrix, pattern } = projectToStoreShape(project);
           const isDirty = get().project.dirty;
 

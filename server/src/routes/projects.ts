@@ -192,7 +192,7 @@ router.post(
       );
       const forkPattern = isProjectMatrix(original.pattern)
         ? rewriteMatrixSampleIds(original.pattern, sampleRewrite)
-        : original.pattern;
+        : rewriteFlatPatternSampleIds(original.pattern, sampleRewrite);
       const fork: Project = {
         ...original,
         id: newId,
@@ -308,20 +308,27 @@ export async function cloneSamplesForFork(
   srcProjectId: string,
   dstProjectId: string,
   dstOwnerId: string,
-): Promise<Record<string, string>> {
+): Promise<Record<string, SampleRef>> {
   const snap = await db
     .collection("samples")
     .where("projectId", "==", srcProjectId)
     .get();
   if (snap.empty) return {};
-  const rewrite: Record<string, string> = {};
+  // Map from original sample id to the FULL cloned SampleRef. We
+  // need the full ref because each step + track snapshots
+  // (sampleId, sampleVersion, sampleName) at toggle time — leaving
+  // the version + name fields pointing at the source doc produces
+  // wrong-version playback or label drift after the fork.
+  const rewrite: Record<string, SampleRef> = {};
   const batch = db.batch();
   for (const doc of snap.docs) {
     const original = doc.data() as SampleRef & { status?: string };
     // Skip pending uploads — only finalized samples are part of the rig.
+    // Accepted edge case: if the source matrix activated a step on a
+    // sample that finalized after the fork was taken, the fork retains
+    // an orphan reference until the user re-uploads.
     if (original.status === "pending") continue;
     const newId = nanoid(14);
-    rewrite[original.id] = newId;
     const cloned: SampleRef & { status?: string } = {
       ...original,
       id: newId,
@@ -330,6 +337,7 @@ export async function cloneSamplesForFork(
       createdAt: Date.now(),
       status: "ready",
     };
+    rewrite[original.id] = cloned;
     batch.set(db.collection("samples").doc(newId), cloned);
   }
   await batch.commit();
@@ -337,14 +345,15 @@ export async function cloneSamplesForFork(
 }
 
 /**
- * Walk a v2 ProjectMatrix and replace every sampleId reference (track
- * + step) using the rewrite map. Returns a new matrix — does not
- * mutate the input. Unmapped ids pass through unchanged so built-in
- * sample references and any cross-project orphans stay as they are.
+ * Walk a v2 ProjectMatrix and rewrite every sample reference (track
+ * AND step) — id, version, AND display name — using the cloned doc
+ * metadata. Returns a new matrix; does not mutate the input.
+ * Unmapped ids pass through unchanged so built-in samples and any
+ * cross-project orphans stay as they are.
  */
 export function rewriteMatrixSampleIds(
   matrix: ProjectMatrix,
-  rewrite: Record<string, string>,
+  rewrite: Record<string, SampleRef>,
 ): ProjectMatrix {
   if (Object.keys(rewrite).length === 0) return matrix;
   return {
@@ -353,19 +362,73 @@ export function rewriteMatrixSampleIds(
       ...cell,
       pattern: {
         ...cell.pattern,
-        tracks: cell.pattern.tracks.map((track) => ({
-          ...track,
-          sampleId: track.sampleId
-            ? (rewrite[track.sampleId] ?? track.sampleId)
-            : track.sampleId,
-          steps: track.steps.map((step) =>
-            step.sampleId
-              ? { ...step, sampleId: rewrite[step.sampleId] ?? step.sampleId }
-              : step,
-          ),
-        })),
+        tracks: cell.pattern.tracks.map((track) => {
+          const cloned = track.sampleId ? rewrite[track.sampleId] : null;
+          const nextTrack = cloned
+            ? {
+                ...track,
+                sampleId: cloned.id,
+                sampleVersion: cloned.version,
+                sampleName: cloned.name,
+              }
+            : track;
+          return {
+            ...nextTrack,
+            steps: nextTrack.steps.map((step) => {
+              if (!step.sampleId) return step;
+              const stepCloned = rewrite[step.sampleId];
+              if (!stepCloned) return step;
+              return {
+                ...step,
+                sampleId: stepCloned.id,
+                sampleVersion: stepCloned.version,
+                sampleName: stepCloned.name,
+              };
+            }),
+          };
+        }),
       },
     })),
+  };
+}
+
+/**
+ * v1 (flat) Pattern variant of the rewrite. Without this, forking a
+ * legacy v1 project would call cloneSamplesForFork (writing new
+ * sample docs) but never rewrite the pattern — orphaning every clone
+ * because the fork's tracks still reference the source ids.
+ */
+export function rewriteFlatPatternSampleIds<
+  P extends { tracks: import("@beats/shared").Track[] },
+>(pattern: P, rewrite: Record<string, SampleRef>): P {
+  if (Object.keys(rewrite).length === 0) return pattern;
+  return {
+    ...pattern,
+    tracks: pattern.tracks.map((track) => {
+      const cloned = track.sampleId ? rewrite[track.sampleId] : null;
+      const nextTrack = cloned
+        ? {
+            ...track,
+            sampleId: cloned.id,
+            sampleVersion: cloned.version,
+            sampleName: cloned.name,
+          }
+        : track;
+      return {
+        ...nextTrack,
+        steps: nextTrack.steps.map((step) => {
+          if (!step.sampleId) return step;
+          const stepCloned = rewrite[step.sampleId];
+          if (!stepCloned) return step;
+          return {
+            ...step,
+            sampleId: stepCloned.id,
+            sampleVersion: stepCloned.version,
+            sampleName: stepCloned.name,
+          };
+        }),
+      };
+    }),
   };
 }
 

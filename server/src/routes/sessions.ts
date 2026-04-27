@@ -9,7 +9,11 @@ import {
   type SessionParticipant,
   type SessionPermissions,
 } from "@beats/shared";
-import { cloneSamplesForFork, rewriteMatrixSampleIds } from "./projects.js";
+import {
+  cloneSamplesForFork,
+  rewriteFlatPatternSampleIds,
+  rewriteMatrixSampleIds,
+} from "./projects.js";
 import { db, rtdb, adminAuth } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
@@ -304,7 +308,7 @@ router.post(
       const sampleRewrite = await cloneSamplesForFork(original.id, newId, uid);
       const forkPattern = isProjectMatrix(original.pattern)
         ? rewriteMatrixSampleIds(original.pattern, sampleRewrite)
-        : original.pattern;
+        : rewriteFlatPatternSampleIds(original.pattern, sampleRewrite);
       const fork: Project = {
         ...original,
         id: newId,

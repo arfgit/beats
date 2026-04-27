@@ -274,18 +274,33 @@ router.post(
       // check on demand below.
       // (2) Session participation — if a sessionId was passed, verify
       // the requester is a participant and stamp the session's project
-      // as accessible.
+      // as accessible. We also enforce a 24h max-age on the session:
+      // RTDB onDisconnect cleans live state but doesn't flip
+      // meta.status to "ended" if the host hard-killed their browser,
+      // so a session that was never explicitly ended stays "open"
+      // forever. A former participant could otherwise re-use a stale
+      // sessionId months later to fetch sample URLs. The TTL closes
+      // that authorization gap without needing a background sweeper.
       if (body.sessionId) {
         const sessionSnap = await rtdb.ref(`sessions/${body.sessionId}`).get();
         if (sessionSnap.exists()) {
           const session = sessionSnap.val() as {
-            meta?: { projectId?: string; status?: string };
+            meta?: {
+              projectId?: string;
+              status?: string;
+              createdAt?: number;
+            };
             participants?: Record<string, unknown>;
           };
+          const SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+          const ageMs = session.meta?.createdAt
+            ? Date.now() - session.meta.createdAt
+            : Number.POSITIVE_INFINITY;
           if (
             session.meta?.status === "open" &&
             session.meta.projectId &&
-            session.participants?.[uid]
+            session.participants?.[uid] &&
+            ageMs <= SESSION_MAX_AGE_MS
           ) {
             accessibleProjectIds.add(session.meta.projectId);
           }

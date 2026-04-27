@@ -4,10 +4,18 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function isProjectMember(project) {
+      // The `'collaboratorIds' in project` guard defends against
+      // legacy project docs where the field was never set. Without
+      // it, the `in` operator on a missing/null field crashes the
+      // whole rule evaluation and denies legitimate reads.
       return request.auth != null && (
         project.ownerId == request.auth.uid
         || project.isPublic == true
-        || request.auth.uid in project.collaboratorIds
+        || (
+          'collaboratorIds' in project
+          && project.collaboratorIds is list
+          && request.auth.uid in project.collaboratorIds
+        )
       );
     }
 
@@ -56,15 +64,23 @@ service cloud.firestore {
       // private project still hears the host's rig — session
       // participation maps to project read access via the
       // /sessions/:id/fork capability the server already enforces.
+      //
+      // Note: public-project samples are intentionally world-readable
+      // through this rule; coupled with the signed-URL endpoint they
+      // become public assets. This is the same scope as the project
+      // they belong to.
+      //
+      // The `'collaboratorIds' in proj` guard defends against legacy
+      // project docs that pre-date the field — without it the `in`
+      // operator on a missing/null field would crash rule evaluation
+      // and deny otherwise-legitimate reads.
       allow read: if resource.data.isBuiltIn == true
                   || (request.auth != null && resource.data.ownerId == request.auth.uid)
                   || (request.auth != null
                       && resource.data.projectId is string
                       && exists(/databases/$(database)/documents/projects/$(resource.data.projectId))
-                      && (
-                        get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.ownerId == request.auth.uid
-                        || get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.isPublic == true
-                        || request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.collaboratorIds
+                      && isProjectMember(
+                        projectData(resource.data.projectId)
                       ));
       allow write: if false;
     }
