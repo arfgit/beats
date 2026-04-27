@@ -112,7 +112,7 @@ function Section({
       ) : (
         <ul className="space-y-1">
           {projects.map((p) => (
-            <li key={p.id} className="group relative">
+            <li key={p.id} className="relative">
               <Tooltip
                 label={`last saved ${new Date(p.updatedAt).toLocaleString()}`}
               >
@@ -132,12 +132,13 @@ function Section({
                 <button
                   type="button"
                   aria-label={`delete project ${p.title}`}
+                  title="delete project"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     onRequestDelete(p);
                   }}
-                  className="absolute top-1/2 right-1 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-ink-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-neon-red hover:bg-neon-red/10 transition-opacity duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-red"
+                  className="absolute top-1/2 right-1 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-ink-muted hover:text-neon-red hover:bg-neon-red/10 transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-red"
                 >
                   <svg
                     width="12"
