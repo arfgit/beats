@@ -296,6 +296,9 @@ export const createCollabSlice: StateCreator<
     if (!sessionId) return;
     const projectId = get().collab.session.meta?.projectId;
     if (projectId) forgetActiveSession(projectId);
+    // Stop local playback so the leaving peer's UI matches reality
+    // (no more isPlaying lingering after the session ends).
+    if (get().transport.isPlaying) get().stop();
     detachSessionListeners(get);
     try {
       await api.post(`/sessions/${sessionId}/leave`, {});
@@ -312,6 +315,12 @@ export const createCollabSlice: StateCreator<
     if (currentProjectId) {
       void get().loadProject(currentProjectId);
       get().startCollab(currentProjectId);
+    } else {
+      // Invitee with no local project — bounce to a fresh studio so
+      // they're not stuck on the host's URL with no read access.
+      set((s) => ({
+        buddy: { ...s.buddy, pendingNavigation: "/" },
+      }));
     }
   },
 
@@ -320,6 +329,7 @@ export const createCollabSlice: StateCreator<
     if (!sessionId) return;
     const projectId = get().collab.session.meta?.projectId;
     if (projectId) forgetActiveSession(projectId);
+    if (get().transport.isPlaying) get().stop();
     detachSessionListeners(get);
     try {
       await api.delete(`/sessions/${sessionId}`);
@@ -598,11 +608,25 @@ function applyRemoteEdit(
   try {
     const op = message.op;
     if (op.kind === "transport/play") {
-      // Fire-and-forget; play() captures applyingRemote synchronously
-      // before its first await, so the broadcast-skip flag survives
-      // the async gap even though we reset it in the finally below.
-      void get().play();
+      // Mirror the play state into local store IMMEDIATELY so the
+      // UI flips even if audio prime is pending (browser autoplay
+      // policy can stall ensureEngineStarted until a user gesture).
+      // play() captures applyingRemote synchronously before its first
+      // await, so the broadcast-skip flag survives the async gap.
+      set((s) => ({
+        transport: { ...s.transport, isPlaying: true },
+      }));
+      void get()
+        .play()
+        .catch((err) => {
+          console.warn("[collab] remote-play apply failed", err);
+        });
     } else if (op.kind === "transport/stop") {
+      // Same — flip state synchronously so the UI is correct even
+      // if the local engine wasn't actually running.
+      set((s) => ({
+        transport: { ...s.transport, isPlaying: false },
+      }));
       get().stop();
     } else {
       // All other EditOp kinds carry a `cellId` (or are pattern-level

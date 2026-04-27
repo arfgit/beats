@@ -38,8 +38,11 @@ export function SaveShareBar() {
   const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
   const setSessionPermissions = useBeatsStore((s) => s.setSessionPermissions);
   const forkSessionProject = useBeatsStore((s) => s.forkSessionProject);
+  const leaveSession = useBeatsStore((s) => s.leaveSession);
+  const endSession = useBeatsStore((s) => s.endSession);
   const navigate = useNavigate();
   const [forking, setForking] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const isInviteeInSession =
     !!sessionId && !!sessionMeta && sessionMeta.ownerUid !== myUid;
   const isHostInSession =
@@ -90,7 +93,7 @@ export function SaveShareBar() {
         <Tooltip label="copy this beat into your own account — leaves the session">
           <Button
             variant="ghost"
-            disabled={forking}
+            disabled={forking || leaving}
             onClick={async () => {
               setForking(true);
               const fork = await forkSessionProject();
@@ -99,6 +102,20 @@ export function SaveShareBar() {
             }}
           >
             {forking ? "forking…" : "fork to my account"}
+          </Button>
+        </Tooltip>
+        <Tooltip label="leave this jam — host and other peers stay connected">
+          <Button
+            variant="ghost"
+            disabled={leaving || forking}
+            onClick={async () => {
+              setLeaving(true);
+              await leaveSession();
+              setLeaving(false);
+              navigate("/");
+            }}
+          >
+            {leaving ? "leaving…" : "leave jam"}
           </Button>
         </Tooltip>
       </div>
@@ -193,6 +210,21 @@ export function SaveShareBar() {
               >
                 {inviteesCanEditGlobal ? "🔓 open jam" : "🔒 host only"}
               </button>
+            </Tooltip>
+          )}
+          {isHostInSession && (
+            <Tooltip label="end the live session for everyone">
+              <Button
+                variant="ghost"
+                disabled={leaving}
+                onClick={async () => {
+                  setLeaving(true);
+                  await endSession();
+                  setLeaving(false);
+                }}
+              >
+                {leaving ? "ending…" : "end jam"}
+              </Button>
             </Tooltip>
           )}
           <InviteDialog
