@@ -1,4 +1,4 @@
-import type { EffectKind, TrackKind } from "./types.js";
+import type { EffectKind, Track, TrackKind } from "./types.js";
 
 /**
  * Wire shapes for the live-collab feature. The same types are used on
@@ -90,6 +90,20 @@ export type EditOp =
   | { kind: "pattern/clearAllSteps"; cellId: string }
   | { kind: "cell/setEnabled"; cellId: string; enabled: boolean }
   | { kind: "cell/setName"; cellId: string; name: string }
+  // Structural matrix ops — add/remove/reorder tracks within a cell
+  // and reorder cells in the matrix. Without these, any add-track or
+  // drag-reorder on one peer leaves the other peers with a different
+  // matrix layout, and subsequent step edits silently no-op when the
+  // referenced trackId/cellId doesn't exist on the receiving side.
+  | { kind: "track/add"; cellId: string; track: Track }
+  | { kind: "track/remove"; cellId: string; trackId: string }
+  | {
+      kind: "track/reorder";
+      cellId: string;
+      fromIndex: number;
+      toIndex: number;
+    }
+  | { kind: "cell/reorder"; fromIndex: number; toIndex: number }
   // Transport ops broadcast playback state across the session so peers
   // hear the same loop together. Drift between peers is unavoidable
   // (each client runs its own audio clock) but the start/stop signal

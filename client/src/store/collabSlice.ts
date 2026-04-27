@@ -353,8 +353,10 @@ export const createCollabSlice: StateCreator<
 
   emitEdit: (op) => {
     const session = get().collab.session;
-    if (!session.id || session.applyingRemote || session.role !== "editor")
-      return;
+    // Session participation IS the edit capability now (host-only
+    // toggles guard global destructive ops). Skip when applying a
+    // remote op so we don't echo it back into the log.
+    if (!session.id || session.applyingRemote) return;
     const user = get().auth.user;
     if (!user) return;
     const message: EditMessage = {

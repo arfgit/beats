@@ -111,32 +111,7 @@ describe("collabSlice broadcast guards", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("emitEdit no-ops for viewer role (read-only sessions)", () => {
-    useBeatsStore.setState((s) => ({
-      auth: { ...s.auth, user: { ...(s.auth.user ?? makeFakeUser()) } },
-      collab: {
-        ...s.collab,
-        session: {
-          ...s.collab.session,
-          id: "sess-1",
-          meta: {
-            v: 1,
-            sessionId: "sess-1",
-            projectId: "p1",
-            ownerUid: "uid-1",
-            createdAt: 0,
-            status: "open",
-          },
-          role: "viewer",
-          applyingRemote: false,
-        },
-      },
-    }));
-    useBeatsStore.getState().emitEdit({ kind: "pattern/setBpm", bpm: 160 });
-    expect(pushMock).not.toHaveBeenCalled();
-  });
-
-  it("emitEdit pushes to RTDB when session is active and role is editor", () => {
+  it("emitEdit pushes to RTDB when session is active", () => {
     useBeatsStore.setState((s) => ({
       auth: { ...s.auth, user: { ...(s.auth.user ?? makeFakeUser()) } },
       collab: {

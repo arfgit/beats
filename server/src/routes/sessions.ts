@@ -54,14 +54,6 @@ async function readProject(projectId: string): Promise<Project | null> {
   return snap.data() as Project;
 }
 
-function isProjectMember(uid: string, project: Project): boolean {
-  return (
-    project.ownerId === uid ||
-    (Array.isArray(project.collaboratorIds) &&
-      project.collaboratorIds.includes(uid))
-  );
-}
-
 /** Look up the user's display name; falls back to a short uid prefix. */
 async function readDisplayName(uid: string): Promise<string> {
   try {
@@ -181,26 +173,20 @@ router.post(
       }
 
       // Anyone authenticated with the link can join — link-only access
-      // is the v1 default. Project ACL is checked here as a courtesy
-      // so private-project sessions don't accidentally leak to anyone.
+      // is the v1 default. Read the project so /join can return its
+      // metadata to the client (used for the guest banner).
       const project = await readProject(session.meta.projectId);
       if (!project) {
         return next(NotFoundError("project for session no longer exists"));
       }
-      const linkAccessible =
-        project.isPublic === true ||
-        project.ownerId === uid ||
-        isProjectMember(uid, project) ||
-        // For non-member non-public projects, allow join since the
-        // session URL is itself a capability — but stamp the role as
-        // viewer so they can't write edits.
-        true;
-      if (!linkAccessible) {
-        return next(ForbiddenError("join not allowed"));
-      }
-      const role: SessionParticipant["role"] =
-        project.isPublic || isProjectMember(uid, project) ? "editor" : "viewer";
-
+      // Session participation IS the edit capability — everyone in the
+      // room can broadcast EditOps. The host has the host-only toggle
+      // ("🔒 host only") in SaveShareBar to constrain destructive
+      // matrix-wide actions for invitees if they want, and the RTDB
+      // rules independently require participant membership for any
+      // /edits write. Stamping invitees as "viewer" was an extra
+      // safety layer that ended up silently breaking the host's view
+      // of invitee edits — viewers don't broadcast.
       const displayName = await readDisplayName(uid);
       const participant: SessionParticipant = {
         v: COLLAB_PROTOCOL_VERSION,
@@ -208,7 +194,7 @@ router.post(
         displayName,
         color: pickColorForUid(uid),
         joinedAt: Date.now(),
-        role,
+        role: "editor",
       };
       await sessionRef.child(`participants/${uid}`).set(participant);
 

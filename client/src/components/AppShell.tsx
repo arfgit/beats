@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { useBeatsStore } from "@/store/useBeatsStore";
 import { useRouteTracker } from "@/lib/useRouteTracker";
@@ -52,6 +53,32 @@ export function AppShell() {
   const location = useLocation();
   const drawerRef = useRef<HTMLElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  // Session-leave confirmation. The "studio" nav link routes to "/"
+  // (fresh solo project). When the user is mid-jam and clicks it, we
+  // intercept to confirm the abandon — losing your spot in a live
+  // session unintentionally is a high-pain mistake.
+  const liveSessionId = useBeatsStore((s) => s.collab.session.id);
+  const leaveSession = useBeatsStore((s) => s.leaveSession);
+  const navigate = useNavigate();
+  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const [leavingSession, setLeavingSession] = useState(false);
+  const handleNavRequest = (to: string, end: boolean) => {
+    // Only the "/" + end:true link is the studio route. Other items
+    // (gallery, profile) still fall under the same "leave?" prompt
+    // because navigating away from /studio/<id> while in session
+    // would silently drop the user from the jam too.
+    void end;
+    return liveSessionId ? to : null;
+  };
+  const confirmLeave = async () => {
+    if (!leaveTarget || leavingSession) return;
+    setLeavingSession(true);
+    await leaveSession();
+    setLeavingSession(false);
+    const target = leaveTarget;
+    setLeaveTarget(null);
+    navigate(target);
+  };
 
   // Close the mobile menu on route change.
   useEffect(() => {
@@ -122,6 +149,12 @@ export function AppShell() {
                   key={item.to}
                   to={item.to}
                   end={item.end}
+                  onClick={(e) => {
+                    const intercept = handleNavRequest(item.to, item.end);
+                    if (!intercept) return;
+                    e.preventDefault();
+                    setLeaveTarget(intercept);
+                  }}
                   className={({ isActive }) =>
                     clsx(
                       "px-3 py-1.5 rounded transition-colors duration-200 ease-in",
@@ -244,6 +277,12 @@ export function AppShell() {
                 key={item.to}
                 to={item.to}
                 end={item.end}
+                onClick={(e) => {
+                  const intercept = handleNavRequest(item.to, item.end);
+                  if (!intercept) return;
+                  e.preventDefault();
+                  setLeaveTarget(intercept);
+                }}
                 className={({ isActive }) =>
                   clsx(
                     "px-3 py-2.5 rounded border transition-colors duration-200 ease-in",
@@ -331,7 +370,85 @@ export function AppShell() {
         onClose={() => setBuddyDrawerOpen(false)}
       />
       <BuddyNavigationBridge />
+      {leaveTarget && (
+        <LeaveSessionConfirmModal
+          isLeaving={leavingSession}
+          onConfirm={() => void confirmLeave()}
+          onCancel={() => {
+            if (leavingSession) return;
+            setLeaveTarget(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function LeaveSessionConfirmModal({
+  isLeaving,
+  onConfirm,
+  onCancel,
+}: {
+  isLeaving: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    el.showModal();
+    return () => {
+      if (el.open) el.close();
+    };
+  }, []);
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
+      aria-labelledby={titleId}
+      className={clsx(
+        "fixed m-auto rounded-lg border border-neon-violet/70 bg-bg-panel p-6 shadow-xl shadow-black/60",
+        "w-full max-w-sm",
+        "backdrop:bg-bg-void/75 backdrop:backdrop-blur-sm",
+        "focus-visible:outline-none",
+      )}
+    >
+      <h3
+        id={titleId}
+        className="mb-1 font-mono text-sm uppercase tracking-widest text-neon-violet"
+      >
+        leave the jam?
+      </h3>
+      <p className="mb-5 text-[11px] text-ink-muted">
+        You're in a live session. Continuing will drop you out of the jam and
+        open a fresh solo studio. Other peers stay connected.
+      </p>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          autoFocus
+          disabled={isLeaving}
+          className="h-8 px-3 rounded border border-grid font-mono text-[10px] uppercase tracking-widest text-ink-muted hover:border-ink-dim hover:text-ink transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          stay
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={isLeaving}
+          className="h-8 px-3 rounded border border-neon-violet/70 font-mono text-[10px] uppercase tracking-widest text-neon-violet hover:bg-neon-violet/10 transition-colors duration-200 ease-in motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neon-violet disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLeaving ? "leaving…" : "leave jam"}
+        </button>
+      </div>
+    </dialog>,
+    document.body,
   );
 }
 

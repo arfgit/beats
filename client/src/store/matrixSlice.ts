@@ -191,9 +191,11 @@ export const createMatrixSlice: StateCreator<
           if (moved) draft.cells.splice(toIndex, 0, moved);
         }),
       }));
+      get().emitEdit({ kind: "cell/reorder", fromIndex, toIndex });
     },
 
     reorderTracks: (cellId, fromIndex, toIndex) => {
+      let didReorder = false;
       set((s) => ({
         matrix: produce(s.matrix, (draft) => {
           const cell = draft.cells.find((c) => c.id === cellId);
@@ -203,9 +205,20 @@ export const createMatrixSlice: StateCreator<
           if (toIndex < 0 || toIndex > max) return;
           if (fromIndex === toIndex) return;
           const [moved] = cell.pattern.tracks.splice(fromIndex, 1);
-          if (moved) cell.pattern.tracks.splice(toIndex, 0, moved);
+          if (moved) {
+            cell.pattern.tracks.splice(toIndex, 0, moved);
+            didReorder = true;
+          }
         }),
       }));
+      if (didReorder) {
+        get().emitEdit({
+          kind: "track/reorder",
+          cellId,
+          fromIndex,
+          toIndex,
+        });
+      }
     },
 
     addTrack: (cellId, kind) => {
@@ -217,19 +230,31 @@ export const createMatrixSlice: StateCreator<
           cell.pattern.tracks.push(track);
         }),
       }));
+      // Broadcast the full track payload — peers need the same id +
+      // step shape so subsequent step-toggle ops on this trackId
+      // resolve. Without this, an addTrack on the host produces a
+      // trackId the invitees don't have, and every later edit on
+      // that row silently no-ops on the invitee side.
+      get().emitEdit({ kind: "track/add", cellId, track });
     },
 
     removeTrack: (cellId, trackId) => {
+      let didRemove = false;
       set((s) => ({
         matrix: produce(s.matrix, (draft) => {
           const cell = draft.cells.find((c) => c.id === cellId);
           if (!cell) return;
           if (cell.pattern.tracks.length <= 1) return;
+          const before = cell.pattern.tracks.length;
           cell.pattern.tracks = cell.pattern.tracks.filter(
             (t) => t.id !== trackId,
           );
+          didRemove = cell.pattern.tracks.length !== before;
         }),
       }));
+      if (didRemove) {
+        get().emitEdit({ kind: "track/remove", cellId, trackId });
+      }
     },
 
     clearAllCellSteps: () => {
@@ -537,6 +562,51 @@ export const createMatrixSlice: StateCreator<
               } else {
                 cell.name = trimmed.slice(0, 24);
               }
+              return;
+            }
+            case "track/add": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              if (!cell) return;
+              // Idempotency guard: if the trackId already exists on
+              // this peer (rare race during reconnect/resync), skip.
+              if (cell.pattern.tracks.some((t) => t.id === op.track.id)) return;
+              cell.pattern.tracks.push(op.track);
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/remove": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              if (!cell) return;
+              if (cell.pattern.tracks.length <= 1) return;
+              cell.pattern.tracks = cell.pattern.tracks.filter(
+                (t) => t.id !== op.trackId,
+              );
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/reorder": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              if (!cell) return;
+              const max = cell.pattern.tracks.length - 1;
+              if (op.fromIndex < 0 || op.fromIndex > max) return;
+              if (op.toIndex < 0 || op.toIndex > max) return;
+              if (op.fromIndex === op.toIndex) return;
+              const [moved] = cell.pattern.tracks.splice(op.fromIndex, 1);
+              if (moved) cell.pattern.tracks.splice(op.toIndex, 0, moved);
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "cell/reorder": {
+              const max = draft.cells.length - 1;
+              if (op.fromIndex < 0 || op.fromIndex > max) return;
+              if (op.toIndex < 0 || op.toIndex > max) return;
+              if (op.fromIndex === op.toIndex) return;
+              const [moved] = draft.cells.splice(op.fromIndex, 1);
+              if (moved) draft.cells.splice(op.toIndex, 0, moved);
+              // Cell reorders re-arrange the matrix top-level — the
+              // selected cell didn't change identity, so no flat-pattern
+              // refresh needed. Leaving touchedCellId/touchedShared
+              // unset is intentional.
               return;
             }
             case "transport/play":

@@ -177,7 +177,7 @@ export const createTransportSlice: StateCreator<
           isRecordingPlayback: false,
         },
       }));
-      if (!fromRemote && sessionBefore.id && sessionBefore.role === "editor") {
+      if (!fromRemote && sessionBefore.id) {
         get().emitEdit({ kind: "transport/play" });
       }
       track("play");
@@ -190,7 +190,7 @@ export const createTransportSlice: StateCreator<
       matrixController?.stop();
       set((s) => ({ transport: { ...s.transport, isPlaying: false } }));
       track("stop");
-      if (!fromRemote && session.id && session.role === "editor") {
+      if (!fromRemote && session.id) {
         get().emitEdit({ kind: "transport/stop" });
       }
     },
