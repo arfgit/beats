@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { DEFAULT_SESSION_PERMISSIONS } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
@@ -36,6 +37,9 @@ export function SaveShareBar() {
   const sessionMeta = useBeatsStore((s) => s.collab.session.meta);
   const myUid = useBeatsStore((s) => s.auth.user?.id ?? null);
   const setSessionPermissions = useBeatsStore((s) => s.setSessionPermissions);
+  const forkSessionProject = useBeatsStore((s) => s.forkSessionProject);
+  const navigate = useNavigate();
+  const [forking, setForking] = useState(false);
   const isInviteeInSession =
     !!sessionId && !!sessionMeta && sessionMeta.ownerUid !== myUid;
   const isHostInSession =
@@ -83,6 +87,20 @@ export function SaveShareBar() {
           hosted by{" "}
           <span className="text-ink">{sessionMeta.ownerDisplayName}</span>
         </span>
+        <Tooltip label="copy this beat into your own account — leaves the session">
+          <Button
+            variant="ghost"
+            disabled={forking}
+            onClick={async () => {
+              setForking(true);
+              const fork = await forkSessionProject();
+              setForking(false);
+              if (fork) navigate(`/studio/${fork.id}`);
+            }}
+          >
+            {forking ? "forking…" : "fork to my account"}
+          </Button>
+        </Tooltip>
       </div>
     );
   }

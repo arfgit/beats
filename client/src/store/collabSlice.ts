@@ -568,72 +568,14 @@ function applyRemoteEdit(
     },
   }));
   try {
-    const op = message.op;
-    const store = get();
-    switch (op.kind) {
-      case "matrix/toggleStep":
-        store.toggleStep(op.trackId, op.step);
-        break;
-      case "matrix/setStepVelocity":
-        store.setStepVelocity(op.trackId, op.step, op.velocity);
-        break;
-      case "matrix/setStepSample":
-        store.setStepSample(op.trackId, op.step, op.sampleId, op.sampleVersion);
-        break;
-      case "track/setSample":
-        store.setTrackSample(op.trackId, op.sampleId, op.sampleVersion);
-        break;
-      case "track/setName":
-        store.setTrackName(op.trackId, op.name);
-        break;
-      case "track/setGain":
-        store.setTrackGain(op.trackId, op.gain);
-        break;
-      case "track/toggleMute":
-        store.toggleMute(op.trackId);
-        break;
-      case "track/toggleSolo":
-        store.toggleSolo(op.trackId);
-        break;
-      case "track/setKind":
-        store.setTrackKind(op.cellId, op.trackId, op.newKind);
-        break;
-      case "track/clearSample":
-        store.clearTrackSample(op.trackId);
-        break;
-      case "track/setAllSteps":
-        store.setAllStepsOnTrack(op.trackId, op.active);
-        break;
-      case "pattern/setBpm":
-        store.setBpm(op.bpm);
-        break;
-      case "pattern/setMasterGain":
-        store.setMasterGain(op.gain);
-        break;
-      case "pattern/setEffectParam":
-        store.setEffectParam(op.effectKind, op.key, op.value);
-        break;
-      case "pattern/toggleEffect":
-        store.toggleEffect(op.effectKind);
-        break;
-      case "pattern/clearAllSteps":
-        store.clearAllSteps();
-        break;
-      case "cell/setEnabled":
-        store.toggleCellEnabled(op.cellId);
-        break;
-      case "cell/setName":
-        // setCellName is wired via uiSlice / projectSlice; stub for now.
-        // Until that handler exists, silently no-op so a peer renaming
-        // a cell doesn't crash the apply path.
-        break;
-      default: {
-        // Exhaustiveness check — TS will yell if we add a new EditOp
-        // kind without handling it here.
-        const _exhaustive: never = op;
-        void _exhaustive;
-      }
-    }
+    // All EditOp kinds carry a `cellId` (or are pattern-level shared
+    // state). Route through the matrix-targeted apply so remote ops
+    // land on the cell the host actually changed instead of whichever
+    // cell this peer happens to have selected. The previous per-op
+    // dispatch leaked through the local pattern slice and silently
+    // mis-targeted edits — that's why a host edit on cell 1 could land
+    // on the invitee's cell 3 view.
+    get().applyRemoteEditOp(message.op);
   } finally {
     set((s) => ({
       collab: {

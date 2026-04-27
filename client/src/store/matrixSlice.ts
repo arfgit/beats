@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import { produce } from "immer";
 import type {
+  EditOp,
   EffectKind,
   MixerCell,
   Pattern,
@@ -10,6 +11,8 @@ import type {
   TrackKind,
 } from "@beats/shared";
 import {
+  BPM_MAX,
+  BPM_MIN,
   createDefaultMatrix,
   createEmptyMixerCell,
   createEmptyTrack,
@@ -69,6 +72,19 @@ export interface MatrixSlice {
    * if not already loaded. Used by the "seed demo" button.
    */
   generateDemoBeat: () => Promise<void>;
+
+  /**
+   * Apply a remote `EditOp` directly to the matrix, targeting the cell
+   * named in `op.cellId` regardless of which cell the local user has
+   * selected. Refreshes the flat pattern only if the affected cell is
+   * the one currently being edited so the row grid reflects the change.
+   *
+   * This bypasses the per-slice action dispatch used for local edits —
+   * those actions mutate the flat `pattern` (the working copy of the
+   * selected cell) and would land remote ops on the wrong cell when
+   * the local selection differs from `op.cellId`.
+   */
+  applyRemoteEditOp: (op: EditOp) => void;
 
   // ---- sync helpers ----
   /**
@@ -310,6 +326,238 @@ export const createMatrixSlice: StateCreator<
         trackId,
         newKind: kind,
       });
+    },
+
+    applyRemoteEditOp: (op) => {
+      const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+      let touchedCellId: string | null = null;
+      // Pattern-level ops (bpm, masterGain) target the matrix root —
+      // tracked as "touched" without a cell so we still refresh the
+      // flat pattern for the selected cell at the end.
+      let touchedShared = false;
+      set((s) => ({
+        matrix: produce(s.matrix, (draft) => {
+          switch (op.kind) {
+            case "matrix/toggleStep": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              const step = track?.steps[op.step];
+              if (!cell || !track || !step) return;
+              const willBeActive = !step.active;
+              step.active = willBeActive;
+              if (willBeActive) {
+                if (track.sampleId && track.sampleVersion != null) {
+                  step.sampleId = track.sampleId;
+                  step.sampleVersion = track.sampleVersion;
+                  step.sampleName = track.sampleName ?? null;
+                }
+              } else {
+                delete step.sampleId;
+                delete step.sampleVersion;
+                delete step.sampleName;
+              }
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "matrix/setStepVelocity": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const step = cell?.pattern.tracks.find((t) => t.id === op.trackId)
+                ?.steps[op.step];
+              if (!step) return;
+              step.velocity = clamp01(op.velocity);
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "matrix/setStepSample": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const step = cell?.pattern.tracks.find((t) => t.id === op.trackId)
+                ?.steps[op.step];
+              if (!step) return;
+              step.sampleId = op.sampleId;
+              step.sampleVersion = op.sampleVersion;
+              step.sampleName = op.sampleName ?? null;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/setSample": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              track.sampleId = op.sampleId;
+              track.sampleVersion = op.sampleVersion;
+              track.sampleName = op.sampleName ?? null;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/setName": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              const trimmed = op.name.trim();
+              if (trimmed.length === 0) {
+                delete track.name;
+              } else {
+                track.name = trimmed.slice(0, 40);
+              }
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/setGain": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              track.gain = clamp01(op.gain);
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/toggleMute": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              track.muted = !track.muted;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/toggleSolo": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              track.soloed = !track.soloed;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/setKind": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              if (track.kind === op.newKind) return;
+              track.kind = op.newKind;
+              track.sampleId = null;
+              track.sampleVersion = null;
+              for (const step of track.steps) {
+                step.active = false;
+                step.velocity = 1;
+              }
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/clearSample": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              track.sampleId = null;
+              track.sampleVersion = null;
+              track.sampleName = null;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "track/setAllSteps": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const track = cell?.pattern.tracks.find(
+                (t) => t.id === op.trackId,
+              );
+              if (!track) return;
+              for (const step of track.steps) step.active = op.active;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "pattern/setBpm": {
+              draft.sharedBpm = Math.max(
+                BPM_MIN,
+                Math.min(BPM_MAX, Math.round(op.bpm)),
+              );
+              touchedShared = true;
+              return;
+            }
+            case "pattern/setMasterGain": {
+              draft.masterGain = clamp01(op.gain);
+              touchedShared = true;
+              return;
+            }
+            case "pattern/setEffectParam": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const effect = cell?.effects.find(
+                (e) => e.kind === op.effectKind,
+              );
+              if (!effect) return;
+              (effect.params as Record<string, number>)[op.key] = op.value;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "pattern/toggleEffect": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              const effect = cell?.effects.find(
+                (e) => e.kind === op.effectKind,
+              );
+              if (!effect) return;
+              effect.enabled = !effect.enabled;
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "pattern/clearAllSteps": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              if (!cell) return;
+              for (const track of cell.pattern.tracks) {
+                for (const step of track.steps) step.active = false;
+              }
+              touchedCellId = op.cellId;
+              return;
+            }
+            case "cell/setEnabled": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              if (!cell) return;
+              // Use the explicit value from the op rather than toggling —
+              // host disabling a cell that's already disabled on this
+              // peer should stay disabled, not flip back on.
+              cell.enabled = op.enabled;
+              return;
+            }
+            case "cell/setName": {
+              const cell = draft.cells.find((c) => c.id === op.cellId);
+              if (!cell) return;
+              const trimmed = op.name.trim();
+              if (trimmed.length === 0) {
+                delete cell.name;
+              } else {
+                cell.name = trimmed.slice(0, 24);
+              }
+              return;
+            }
+            default: {
+              const _exhaustive: never = op;
+              void _exhaustive;
+              return;
+            }
+          }
+        }),
+      }));
+      // If the affected cell is the one this peer is currently editing,
+      // refresh the flat pattern so the row grid reflects the remote
+      // change immediately. Pattern-level ops (bpm, masterGain) also
+      // need the refresh so the transport bar updates.
+      const selectedCellId = get().selectedCellId;
+      if (
+        touchedShared ||
+        (touchedCellId && touchedCellId === selectedCellId)
+      ) {
+        get().loadCellIntoPattern(selectedCellId);
+      }
     },
 
     syncPatternIntoMatrix: () => {

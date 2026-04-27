@@ -69,6 +69,13 @@ export interface ProjectSlice {
   markDirty: () => void;
   flushSave: () => Promise<void>;
   forkProject: () => Promise<Project | null>;
+  /**
+   * Session-aware fork: when an invitee in a live session wants their
+   * own copy of the host's project. Bypasses the read ACL because
+   * session participation is the read capability — server verifies
+   * the user is a participant in the open session.
+   */
+  forkSessionProject: () => Promise<Project | null>;
   setIsPublic: (isPublic: boolean) => Promise<void>;
   setTitle: (title: string) => Promise<void>;
   /**
@@ -375,6 +382,27 @@ export const createProjectSlice: StateCreator<
       set((s) => ({
         project: { ...s.project, saveStatus: "error", lastError: message },
       }));
+      return null;
+    }
+  },
+
+  forkSessionProject: async () => {
+    const sessionId = get().collab.session.id;
+    if (!sessionId) return null;
+    try {
+      const fork = await api.post<Project>(`/sessions/${sessionId}/fork`);
+      // Hand off: gracefully leave the session so we stop receiving
+      // host edits, then navigate via the SaveShareBar caller. We
+      // intentionally don't pre-populate matrix/pattern here — the
+      // route push to /studio/<forkId> drives loadProject which
+      // hydrates state correctly without a flash of stale content.
+      void get().leaveSession();
+      get().pushToast("success", "forked to your account");
+      return fork;
+    } catch (err) {
+      const message =
+        err instanceof ApiCallError ? err.apiError.message : "fork failed";
+      get().pushToast("error", message);
       return null;
     }
   },

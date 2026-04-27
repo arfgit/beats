@@ -260,6 +260,55 @@ router.patch(
   },
 );
 
+router.post(
+  "/sessions/:id/fork",
+  requireAuth,
+  sessionLimiter,
+  validateBody(sessionEmptyBody),
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { uid } = req.auth!;
+      const sessionId = req.params.id!;
+      const sessionRef = rtdb.ref(`sessions/${sessionId}`);
+      const snap = await sessionRef.get();
+      if (!snap.exists()) return next(NotFoundError("session not found"));
+      const session = snap.val() as {
+        meta?: SessionMeta;
+        participants?: Record<string, SessionParticipant>;
+      };
+      if (!session.meta || session.meta.status !== "open") {
+        return next(ConflictError("session is not open"));
+      }
+      if (!session.participants?.[uid]) {
+        return next(ForbiddenError("must be a session participant to fork"));
+      }
+      const original = await readProject(session.meta.projectId);
+      if (!original) {
+        return next(NotFoundError("project for session no longer exists"));
+      }
+      // Session participation IS the read capability here — invitees who
+      // joined via link don't need to be in collaboratorIds to fork.
+      const newId = nanoid(14);
+      const now = Date.now();
+      const fork: Project = {
+        ...original,
+        id: newId,
+        ownerId: uid,
+        title: `${original.title} (fork)`,
+        isPublic: false,
+        collaboratorIds: [],
+        revision: 1,
+        updatedAt: now,
+        createdAt: now,
+      };
+      await db.collection("projects").doc(newId).set(fork);
+      res.status(201).json({ data: fork });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 router.delete(
   "/sessions/:id",
   requireAuth,
