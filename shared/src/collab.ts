@@ -144,6 +144,18 @@ export interface PresenceState {
     trackId?: string;
     step?: number;
   };
+  /**
+   * Most recent edit this peer made — written each time emitEdit fires.
+   * Receivers use it to flash a brief peer-colored pulse on the
+   * affected cell so a drag, toggle, or any other op is visibly
+   * attributable to whoever made it. Decays naturally as new edits
+   * overwrite it. Optional so existing presence records without it
+   * still parse.
+   */
+  lastEdit?: {
+    cellId?: string;
+    at: number;
+  };
   lastSeen: number;
 }
 

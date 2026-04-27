@@ -106,6 +106,41 @@ export function MatrixGrid() {
     }
     return out;
   }, [sessionId, sessionPresence, sessionParticipants, myUid]);
+  // Recent peer edits — keyed by cellId. Each value is the most
+  // recent peer's color + timestamp. Used to flash a brief pulse
+  // on the cell so the user can SEE that "yes, the host's drag /
+  // toggle / sample swap really did land here." Decays naturally
+  // as new edits overwrite presence.lastEdit.
+  const peerEditsByCell = useMemo(() => {
+    const out: Record<string, { color: string; at: number }> = {};
+    if (!sessionId) return out;
+    for (const [uid, p] of Object.entries(sessionPresence)) {
+      if (uid === myUid) continue;
+      const edit = p?.lastEdit;
+      if (!edit?.cellId || !edit.at) continue;
+      const participant = sessionParticipants[uid];
+      const color = participant?.color ?? p.color ?? "#b84dff";
+      const prev = out[edit.cellId];
+      if (!prev || prev.at < edit.at) {
+        out[edit.cellId] = { color, at: edit.at };
+      }
+    }
+    return out;
+  }, [sessionId, sessionPresence, sessionParticipants, myUid]);
+  // Tick every 200ms while any cell pulse is active so the React
+  // tree re-renders to expire the pulse at the 1.5s mark. Skipped
+  // when there are no recent edits to keep the render path cheap
+  // when the matrix is idle.
+  const [, setPulseTick] = useState(0);
+  const hasRecentEdit = useMemo(
+    () => Object.values(peerEditsByCell).some((e) => Date.now() - e.at < 1500),
+    [peerEditsByCell],
+  );
+  useEffect(() => {
+    if (!hasRecentEdit) return;
+    const id = setInterval(() => setPulseTick((n) => n + 1), 200);
+    return () => clearInterval(id);
+  }, [hasRecentEdit]);
   const [seeding, setSeeding] = useState(false);
   const [showSeedModal, setShowSeedModal] = useState(false);
 
@@ -256,6 +291,18 @@ export function MatrixGrid() {
           // the dominant collaborator is obvious at a glance. The full
           // list still renders as stacked dots in the corner.
           const primaryPeerColor = peersHere[0]?.color ?? null;
+          // Recent peer-edit pulse — flashes when a peer's emitEdit
+          // landed on this cell within the last 1.5s. Visible proof
+          // that "yes, the host's drag really did sync." Decays as
+          // newer edits overwrite presence.lastEdit.
+          const recentEdit = peerEditsByCell[cell.id];
+          const editAgeMs = recentEdit ? Date.now() - recentEdit.at : Infinity;
+          const pulseActive = editAgeMs < 1500;
+          // Pulse intensity decays linearly so the flash feels
+          // organic instead of binary on/off.
+          const pulseAlpha = pulseActive
+            ? Math.max(0, 1 - editAgeMs / 1500)
+            : 0;
           const stepsActive = cell.pattern.tracks.reduce(
             (sum, t) => sum + t.steps.filter((s) => s.active).length,
             0,
@@ -280,16 +327,28 @@ export function MatrixGrid() {
                   setSelectedCellId(cell.id);
                 }
               }}
-              style={
-                primaryPeerColor && !isSelected
-                  ? {
-                      // Subtle tint when a peer is here but we're not.
-                      // Selected (violet) wins on visual priority — the
-                      // user's own focus is what they care about most.
-                      boxShadow: `inset 0 0 0 2px ${primaryPeerColor}, 0 0 12px ${primaryPeerColor}40`,
-                    }
-                  : undefined
-              }
+              style={(() => {
+                // Layer the peer-presence ring (focus) and the
+                // peer-edit pulse (recent emit). When both are
+                // present the pulse takes priority — it's a stronger
+                // signal that something just happened. When neither,
+                // no inline shadow.
+                if (pulseActive && recentEdit) {
+                  const intensity = Math.round(pulseAlpha * 24);
+                  return {
+                    boxShadow: `inset 0 0 0 3px ${recentEdit.color}, 0 0 ${intensity}px ${recentEdit.color}`,
+                  };
+                }
+                if (primaryPeerColor && !isSelected) {
+                  // Subtle tint when a peer is here but we're not.
+                  // Selected (violet) wins on visual priority — the
+                  // user's own focus is what they care about most.
+                  return {
+                    boxShadow: `inset 0 0 0 2px ${primaryPeerColor}, 0 0 12px ${primaryPeerColor}40`,
+                  };
+                }
+                return undefined;
+              })()}
               className={clsx(
                 "relative cursor-grab active:cursor-grabbing select-none rounded border p-2 h-28 lg:h-32",
                 "flex flex-col",

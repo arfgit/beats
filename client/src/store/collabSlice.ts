@@ -102,6 +102,45 @@ export interface CollabSlice {
 
 const HEARTBEAT_MS = 3000;
 
+/**
+ * Pull the cellId out of an EditOp when it carries one. Used by
+ * emitEdit to stamp `presence.lastEdit.cellId` so peers can flash
+ * the affected cell in the editor's color. Pattern-level ops
+ * (transport, bpm, masterGain) and cell-reorder return null —
+ * those don't have a single cell to highlight.
+ */
+function extractCellIdFromOp(op: EditOp): string | null {
+  switch (op.kind) {
+    case "matrix/toggleStep":
+    case "matrix/setStepVelocity":
+    case "matrix/setStepSample":
+    case "track/setSample":
+    case "track/setName":
+    case "track/setGain":
+    case "track/toggleMute":
+    case "track/toggleSolo":
+    case "track/setKind":
+    case "track/clearSample":
+    case "track/setAllSteps":
+    case "track/resetMixer":
+    case "track/add":
+    case "track/remove":
+    case "track/reorder":
+    case "pattern/setEffectParam":
+    case "pattern/toggleEffect":
+    case "pattern/clearAllSteps":
+    case "cell/setEnabled":
+    case "cell/setName":
+      return op.cellId;
+    case "cell/reorder":
+    case "pattern/setBpm":
+    case "pattern/setMasterGain":
+    case "transport/play":
+    case "transport/stop":
+      return null;
+  }
+}
+
 function freshSession(): CollabSlice["collab"]["session"] {
   return {
     id: null,
@@ -379,6 +418,16 @@ export const createCollabSlice: StateCreator<
     // sortable key; consumers replay in key order. Don't await: edits
     // are best-effort fire-and-forget on the broadcast path.
     void push(dbRef(rtdb, `sessions/${session.id}/edits`), message);
+    // Mirror the edit's target cell into our presence so peers can
+    // flash a brief peer-colored pulse on the affected cell —
+    // visible proof that "Alice just dragged this." The cellId is
+    // extracted from the op when it carries one; otherwise null
+    // (transport, bpm, masterGain — global ops with no cell focus).
+    const cellId = extractCellIdFromOp(op);
+    void dbUpdate(dbRef(rtdb, `sessions/${session.id}/presence/${user.id}`), {
+      lastEdit: { ...(cellId ? { cellId } : {}), at: Date.now() },
+      lastSeen: Date.now(),
+    });
   },
 
   emitPresence: (cursor, focus) => {
