@@ -425,8 +425,8 @@ function LeaveSessionConfirmModal({
         leave the jam?
       </h3>
       <p className="mb-5 text-[11px] text-ink-muted">
-        You're in a live session. Continuing will drop you out of the jam and
-        open a fresh solo studio. Other peers stay connected.
+        You&apos;re in a live session. Continuing will drop you out of the jam
+        and open a fresh solo studio. Other peers stay connected.
       </p>
       <div className="flex items-center justify-end gap-2">
         <button

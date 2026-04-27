@@ -3,11 +3,13 @@ import { nanoid } from "nanoid";
 import {
   COLLAB_PROTOCOL_VERSION,
   DEFAULT_SESSION_PERMISSIONS,
+  isProjectMatrix,
   type Project,
   type SessionMeta,
   type SessionParticipant,
   type SessionPermissions,
 } from "@beats/shared";
+import { cloneSamplesForFork, rewriteMatrixSampleIds } from "./projects.js";
 import { db, rtdb, adminAuth } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { ConflictError, ForbiddenError, NotFoundError } from "../lib/errors.js";
@@ -295,6 +297,14 @@ router.post(
       // joined via link don't need to be in collaboratorIds to fork.
       const newId = nanoid(14);
       const now = Date.now();
+      // Clone the host's sample rig into the fork — without this the
+      // forking invitee would inherit the matrix but lose access to
+      // every custom sample referenced in it (their account doesn't
+      // own the source sample docs).
+      const sampleRewrite = await cloneSamplesForFork(original.id, newId, uid);
+      const forkPattern = isProjectMatrix(original.pattern)
+        ? rewriteMatrixSampleIds(original.pattern, sampleRewrite)
+        : original.pattern;
       const fork: Project = {
         ...original,
         id: newId,
@@ -305,6 +315,7 @@ router.post(
         revision: 1,
         updatedAt: now,
         createdAt: now,
+        pattern: forkPattern,
       };
       await db.collection("projects").doc(newId).set(fork);
       res.status(201).json({ data: fork });

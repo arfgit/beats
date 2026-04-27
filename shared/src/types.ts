@@ -26,6 +26,15 @@ export interface SampleRef {
   sourceFileName?: string;
   /** Encoded WAV size of a custom sample's storage object, in bytes. */
   originalSizeBytes?: number;
+  /**
+   * Project this custom sample is rigged to. Samples are scoped to a
+   * project — uploading for project A never bleeds into project B.
+   * Built-ins have no projectId (they're available to every project).
+   * On fork, the server clones each parent project's sample docs and
+   * stamps the new copies with the fork's projectId so the fork's rig
+   * is pre-loaded at fork time.
+   */
+  projectId?: string;
 }
 
 export interface TrackStep {

@@ -149,6 +149,11 @@ export const createProjectSlice: StateCreator<
 
   loadProject: async (projectId) => {
     get().project.unsubscribeRemote?.();
+    // Project switch flushes the custom-sample cache so the picker
+    // reflects the new project's rig (per-project sample scope) on
+    // the next fetchSamples('custom') call. Without this, switching
+    // from project A to B leaves A's samples visible.
+    get().resetCustomSamples();
     try {
       const unsub = onSnapshot(
         doc(db, "projects", projectId),
@@ -230,6 +235,10 @@ export const createProjectSlice: StateCreator<
       clearTimeout(saveTimer);
       saveTimer = null;
     }
+    // Drop the project-scoped custom-sample cache so the picker
+    // doesn't leak samples from the just-closed project into the
+    // anon studio.
+    get().resetCustomSamples();
     set((s) => ({
       project: {
         ...s.project,

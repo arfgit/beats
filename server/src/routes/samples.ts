@@ -6,7 +6,7 @@ import {
   CUSTOM_SAMPLE_MAX_DURATION_MS,
   type SampleRef,
 } from "@beats/shared";
-import { db, storage } from "../services/firebase-admin.js";
+import { db, rtdb, storage } from "../services/firebase-admin.js";
 import {
   reserveQuotaSlot,
   releaseQuotaSlot,
@@ -57,6 +57,7 @@ router.post(
         name: string;
         durationMs: number;
         sourceFileName?: string;
+        projectId?: string;
       };
 
       // Defense in depth — Zod already enforces this, but the constants
@@ -70,6 +71,30 @@ router.post(
             `durationMs must be in [${CUSTOM_SAMPLE_MIN_DURATION_MS}, ${CUSTOM_SAMPLE_MAX_DURATION_MS}]`,
           ),
         );
+      }
+
+      // If a projectId is supplied, the requester must be able to
+      // write the project (owner or collaborator). Prevents stamping
+      // someone else's project with your sample.
+      if (body.projectId) {
+        const projectSnap = await db
+          .collection("projects")
+          .doc(body.projectId)
+          .get();
+        if (!projectSnap.exists) {
+          return next(NotFoundError("project not found"));
+        }
+        const project = projectSnap.data() as {
+          ownerId: string;
+          collaboratorIds?: string[];
+        };
+        const canEdit =
+          project.ownerId === uid ||
+          (Array.isArray(project.collaboratorIds) &&
+            project.collaboratorIds.includes(uid));
+        if (!canEdit) {
+          return next(ForbiddenError("not a member of this project"));
+        }
       }
 
       try {
@@ -98,6 +123,7 @@ router.post(
         createdAt: Date.now(),
         sourceFileName: sanitizeSourceFileName(body.sourceFileName),
         status: "pending",
+        ...(body.projectId ? { projectId: body.projectId } : {}),
       };
       await db.collection("samples").doc(id).set(pending);
 
@@ -231,15 +257,67 @@ router.post(
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
       const { uid } = req.auth!;
-      const body = req.body as { ids: string[] };
+      const body = req.body as { ids: string[]; sessionId?: string };
       // Fetch all docs in parallel, then filter to ones the caller can
       // access. Built-ins are world-readable in storage.rules, so the
       // signed-URL path is for owned customs only — but we tolerate
-      // mixed input and only sign for what's permitted, returning the
-      // direct CDN URL for built-ins is out of scope here (clients use
-      // getDownloadURL for those already).
+      // mixed input and only sign for what's permitted.
       const refs = body.ids.map((id) => db.collection("samples").doc(id));
       const snaps = await db.getAll(...refs);
+
+      // Build the set of project IDs the requester can read samples
+      // for. (1) projects they own or collaborate on, (2) the project
+      // attached to a live session they're a participant in. Cached
+      // here so we only do the lookups once per request.
+      const accessibleProjectIds = new Set<string>();
+      // (1) project membership comes from the sample's projectId; we
+      // check on demand below.
+      // (2) Session participation — if a sessionId was passed, verify
+      // the requester is a participant and stamp the session's project
+      // as accessible.
+      if (body.sessionId) {
+        const sessionSnap = await rtdb.ref(`sessions/${body.sessionId}`).get();
+        if (sessionSnap.exists()) {
+          const session = sessionSnap.val() as {
+            meta?: { projectId?: string; status?: string };
+            participants?: Record<string, unknown>;
+          };
+          if (
+            session.meta?.status === "open" &&
+            session.meta.projectId &&
+            session.participants?.[uid]
+          ) {
+            accessibleProjectIds.add(session.meta.projectId);
+          }
+        }
+      }
+
+      const projectMembershipCache = new Map<string, boolean>();
+      const isProjectMember = async (projectId: string): Promise<boolean> => {
+        if (accessibleProjectIds.has(projectId)) return true;
+        const cached = projectMembershipCache.get(projectId);
+        if (cached !== undefined) return cached;
+        const projectSnap = await db
+          .collection("projects")
+          .doc(projectId)
+          .get();
+        if (!projectSnap.exists) {
+          projectMembershipCache.set(projectId, false);
+          return false;
+        }
+        const project = projectSnap.data() as {
+          ownerId: string;
+          collaboratorIds?: string[];
+          isPublic?: boolean;
+        };
+        const member =
+          project.ownerId === uid ||
+          project.isPublic === true ||
+          (Array.isArray(project.collaboratorIds) &&
+            project.collaboratorIds.includes(uid));
+        projectMembershipCache.set(projectId, member);
+        return member;
+      };
 
       const expires = Date.now() + 10 * 60 * 1000;
       const entries = await Promise.all(
@@ -247,7 +325,11 @@ router.post(
           if (!snap.exists) return null;
           const sample = snap.data() as SampleRef;
           if (sample.isBuiltIn) return null;
-          if (sample.ownerId !== uid) return null;
+          let allowed = sample.ownerId === uid;
+          if (!allowed && sample.projectId) {
+            allowed = await isProjectMember(sample.projectId);
+          }
+          if (!allowed) return null;
           const [url] = await storage
             .bucket()
             .file(sample.storagePath)

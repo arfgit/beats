@@ -32,6 +32,12 @@ export interface SamplesSlice {
   addCustomSample: (sample: SampleRef) => void;
   /** Remove a deleted custom sample from the in-memory list. */
   removeCustomSample: (id: string) => void;
+  /**
+   * Forget the cached "custom" samples so the next fetchSamples('custom')
+   * re-queries — used on project change so the sample picker shows the
+   * new project's rig instead of the previous project's.
+   */
+  resetCustomSamples: () => void;
 }
 
 export const createSamplesSlice: StateCreator<
@@ -73,15 +79,27 @@ export const createSamplesSlice: StateCreator<
     try {
       let samples: SampleRef[];
       if (kind === "custom") {
-        // Owner-scoped read; no isBuiltIn filter (these are isBuiltIn=false
-        // by construction). status="ready" filter strips pending uploads
-        // that never finalized so abandoned uploads don't pollute the
-        // picker.
-        const customQ = query(
-          collection(db, "samples"),
-          where("kind", "==", "custom"),
-          where("ownerId", "==", uid),
-        );
+        // Project-scoped sample rig. When a project is loaded, show
+        // samples uploaded for THAT project. When none is loaded
+        // (anon / fresh studio), fall back to the user's owner-scoped
+        // legacy samples so solo work still has a sample list.
+        // status="ready" filter strips pending uploads that never
+        // finalized so abandoned uploads don't pollute the picker.
+        const projectId = get().project.current?.id ?? null;
+        let customQ;
+        if (projectId) {
+          customQ = query(
+            collection(db, "samples"),
+            where("kind", "==", "custom"),
+            where("projectId", "==", projectId),
+          );
+        } else {
+          customQ = query(
+            collection(db, "samples"),
+            where("kind", "==", "custom"),
+            where("ownerId", "==", uid),
+          );
+        }
         const snap = await getDocs(customQ);
         samples = snap.docs
           .map((d) => d.data() as SampleRef & { status?: string })
@@ -104,7 +122,7 @@ export const createSamplesSlice: StateCreator<
           // query still matches `samples/{allow read: if resource.data.isBuiltIn == true}`
           // rules — dropping isBuiltIn here causes Firestore to reject the
           // whole query for signed-out users.
-           
+
           console.warn(
             `[samples] composite index unavailable, falling back to client sort`,
             indexErr,
@@ -129,7 +147,7 @@ export const createSamplesSlice: StateCreator<
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "samples load failed";
-       
+
       console.error(`[samples] fetch ${kind} failed`, err);
       set((s) => ({
         samples: {
@@ -164,9 +182,17 @@ export const createSamplesSlice: StateCreator<
     if (sample.isBuiltIn) {
       url = await getDownloadURL(storageRef(storage, sample.storagePath));
     } else {
+      // Pass the active session id when in a jam — the server uses
+      // it to grant participants read access to the host's samples
+      // (project-scoped, not user-scoped). Solo / no-session calls
+      // skip the field; server falls back to owner-only signing.
+      const sessionId = get().collab.session.id;
       const result = await api.post<{ urls: Record<string, string> }>(
         "/samples/download-urls",
-        { ids: [sample.id] },
+        {
+          ids: [sample.id],
+          ...(sessionId ? { sessionId } : {}),
+        },
       );
       const signed = result.urls[sample.id];
       if (!signed) throw new Error(`no download URL for sample ${sample.id}`);
@@ -209,6 +235,12 @@ export const createSamplesSlice: StateCreator<
           ),
         },
       },
+    }));
+  },
+
+  resetCustomSamples: () => {
+    set((s) => ({
+      samples: { ...s.samples, custom: emptyKindState() },
     }));
   },
 

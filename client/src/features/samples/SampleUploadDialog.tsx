@@ -161,6 +161,11 @@ export function SampleUploadDialog({ open, onClose, onUploaded }: Props) {
       const blob = encodeWav(sliced);
       const durationMs = Math.round(span);
 
+      // Stamp the sample with the currently-loaded project so it
+      // joins that project's rig instead of polluting every project
+      // the user opens. Solo / anon work uploads with no projectId
+      // and remains user-scoped (legacy behavior).
+      const projectId = useBeatsStore.getState().project.current?.id ?? null;
       const signed = await api.post<{
         sampleId: string;
         uploadUrl: string;
@@ -169,6 +174,7 @@ export function SampleUploadDialog({ open, onClose, onUploaded }: Props) {
         name: trimmedName,
         durationMs,
         sourceFileName: stage.fileName,
+        ...(projectId ? { projectId } : {}),
       });
 
       setStage({ kind: "uploading", phase: "putting" });

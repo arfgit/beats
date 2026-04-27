@@ -187,6 +187,11 @@ export const sampleUploadUrlBody = z.object({
   name: z.string().min(1).max(120),
   durationMs: z.number().int().min(100).max(15_000),
   sourceFileName: z.string().max(200).optional(),
+  // Project this sample is being uploaded for. When present, the
+  // sample is scoped to that project — only members + session
+  // participants of that project can read it. Omit for legacy
+  // user-scoped uploads (still supported for solo work).
+  projectId: z.string().min(1).max(64).optional(),
 });
 
 // Finalize reads storagePath from the server-owned samples doc, so the
@@ -194,9 +199,12 @@ export const sampleUploadUrlBody = z.object({
 export const sampleFinalizeBody = z.object({}).strict();
 
 // Batched download URL request — keeps round trips bounded when a
-// project loads N custom samples on hydration.
+// project loads N custom samples on hydration. sessionId lets a
+// session participant fetch URLs for samples they don't own when
+// the sample's projectId matches the session's projectId.
 export const sampleDownloadUrlsBody = z.object({
   ids: z.array(z.string().min(1).max(64)).min(1).max(50),
+  sessionId: z.string().min(1).max(64).optional(),
 });
 
 // Collab session create — body carries the projectId the session will

@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Response } from "express";
 import { nanoid } from "nanoid";
-import type { Project } from "@beats/shared";
+import type { Project, ProjectMatrix, SampleRef } from "@beats/shared";
 import { isProjectMatrix } from "@beats/shared";
 import { db } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
@@ -180,6 +180,19 @@ router.post(
 
       const newId = nanoid(14);
       const now = Date.now();
+      // Clone the source project's sample rig into the fork so the
+      // forker can hear every sample the original project used —
+      // without this, custom samples would silently fail to load
+      // because the fork's owner doesn't have read access to the
+      // original samples.
+      const sampleRewrite = await cloneSamplesForFork(
+        original.id,
+        newId,
+        req.auth!.uid,
+      );
+      const forkPattern = isProjectMatrix(original.pattern)
+        ? rewriteMatrixSampleIds(original.pattern, sampleRewrite)
+        : original.pattern;
       const fork: Project = {
         ...original,
         id: newId,
@@ -190,6 +203,7 @@ router.post(
         revision: 1,
         updatedAt: now,
         createdAt: now,
+        pattern: forkPattern,
       };
       await db.collection("projects").doc(newId).set(fork);
       res.status(201).json({ data: fork });
@@ -277,6 +291,82 @@ function canRead(project: Project, uid: string): boolean {
 
 function canEdit(project: Project, uid: string): boolean {
   return project.ownerId === uid || project.collaboratorIds.includes(uid);
+}
+
+/**
+ * Clone every sample doc whose projectId matches `srcProjectId` into
+ * doc copies that point at the SAME storage path but are stamped with
+ * `dstProjectId` + `dstOwnerId`. Returns a sampleId rewrite map so the
+ * caller can walk the destination project's matrix and update track
+ * + step references.
+ *
+ * Storage files are NOT duplicated — multiple sample docs sharing one
+ * storagePath is fine because reads go through the signed-URL path,
+ * which signs from the doc, not the path.
+ */
+export async function cloneSamplesForFork(
+  srcProjectId: string,
+  dstProjectId: string,
+  dstOwnerId: string,
+): Promise<Record<string, string>> {
+  const snap = await db
+    .collection("samples")
+    .where("projectId", "==", srcProjectId)
+    .get();
+  if (snap.empty) return {};
+  const rewrite: Record<string, string> = {};
+  const batch = db.batch();
+  for (const doc of snap.docs) {
+    const original = doc.data() as SampleRef & { status?: string };
+    // Skip pending uploads — only finalized samples are part of the rig.
+    if (original.status === "pending") continue;
+    const newId = nanoid(14);
+    rewrite[original.id] = newId;
+    const cloned: SampleRef & { status?: string } = {
+      ...original,
+      id: newId,
+      ownerId: dstOwnerId,
+      projectId: dstProjectId,
+      createdAt: Date.now(),
+      status: "ready",
+    };
+    batch.set(db.collection("samples").doc(newId), cloned);
+  }
+  await batch.commit();
+  return rewrite;
+}
+
+/**
+ * Walk a v2 ProjectMatrix and replace every sampleId reference (track
+ * + step) using the rewrite map. Returns a new matrix — does not
+ * mutate the input. Unmapped ids pass through unchanged so built-in
+ * sample references and any cross-project orphans stay as they are.
+ */
+export function rewriteMatrixSampleIds(
+  matrix: ProjectMatrix,
+  rewrite: Record<string, string>,
+): ProjectMatrix {
+  if (Object.keys(rewrite).length === 0) return matrix;
+  return {
+    ...matrix,
+    cells: matrix.cells.map((cell) => ({
+      ...cell,
+      pattern: {
+        ...cell.pattern,
+        tracks: cell.pattern.tracks.map((track) => ({
+          ...track,
+          sampleId: track.sampleId
+            ? (rewrite[track.sampleId] ?? track.sampleId)
+            : track.sampleId,
+          steps: track.steps.map((step) =>
+            step.sampleId
+              ? { ...step, sampleId: rewrite[step.sampleId] ?? step.sampleId }
+              : step,
+          ),
+        })),
+      },
+    })),
+  };
 }
 
 export default router;

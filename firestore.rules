@@ -49,8 +49,23 @@ service cloud.firestore {
     }
 
     match /samples/{sampleId} {
+      // Built-ins are world-readable. The owner of a custom sample
+      // can always read their own. For project-scoped customs, any
+      // member of the sample's project (owner / collaborator / public
+      // project) can read so a session participant who joined a
+      // private project still hears the host's rig — session
+      // participation maps to project read access via the
+      // /sessions/:id/fork capability the server already enforces.
       allow read: if resource.data.isBuiltIn == true
-                  || (request.auth != null && resource.data.ownerId == request.auth.uid);
+                  || (request.auth != null && resource.data.ownerId == request.auth.uid)
+                  || (request.auth != null
+                      && resource.data.projectId is string
+                      && exists(/databases/$(database)/documents/projects/$(resource.data.projectId))
+                      && (
+                        get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.ownerId == request.auth.uid
+                        || get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.isPublic == true
+                        || request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.collaboratorIds
+                      ));
       allow write: if false;
     }
 
