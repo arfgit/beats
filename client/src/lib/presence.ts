@@ -8,7 +8,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
-export interface PresenceState {
+export interface FirestorePresenceState {
   uid: string;
   displayName: string;
   color: string;
@@ -28,14 +28,14 @@ const STALE_AFTER_MS = 10_000;
 export function subscribeToPresence(
   projectId: string,
   selfUid: string,
-  onPeers: (peers: PresenceState[]) => void,
+  onPeers: (peers: FirestorePresenceState[]) => void,
 ): () => void {
   return onSnapshot(
     collection(db, "projects", projectId, "presence"),
     (snap) => {
       const now = Date.now();
       const peers = snap.docs
-        .map((d) => d.data() as PresenceState)
+        .map((d) => d.data() as FirestorePresenceState)
         .filter((p) => p.uid !== selfUid)
         .filter((p) => now - p.updatedAt < STALE_AFTER_MS);
       onPeers(peers);
@@ -45,7 +45,7 @@ export function subscribeToPresence(
 
 export async function writePresence(
   projectId: string,
-  state: PresenceState,
+  state: FirestorePresenceState,
 ): Promise<void> {
   await setDoc(doc(db, "projects", projectId, "presence", state.uid), {
     ...state,

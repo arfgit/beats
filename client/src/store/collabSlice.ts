@@ -31,7 +31,7 @@ import {
   pickPeerColor,
   subscribeToPresence,
   writePresence,
-  type PresenceState as FirestorePresenceState,
+  type FirestorePresenceState,
 } from "@/lib/presence";
 import type { BeatsStore } from "./useBeatsStore";
 

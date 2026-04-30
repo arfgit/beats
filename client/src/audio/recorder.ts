@@ -1,6 +1,6 @@
 import * as Tone from "tone";
 import { MAX_RECORDING_MS, WAV_CAP_MS } from "@beats/shared";
-import { encodeWav } from "@/lib/wav";
+import { encodeWav } from "@/features/samples/lib/wav-encoder";
 import type { EngineSubscribers } from "./subscribers";
 
 /**
@@ -246,6 +246,5 @@ async function encodeContainerToWav(
   // minimum shape required by the spec.
   const ctx = new OfflineAudioContext(2, 1, 48000);
   const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-  const wav = encodeWav(audioBuffer);
-  return new Blob([wav], { type: "audio/wav" });
+  return encodeWav(audioBuffer);
 }

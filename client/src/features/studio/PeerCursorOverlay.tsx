@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { PresenceState, SessionParticipant } from "@beats/shared";
+import type { SessionParticipant } from "@beats/shared";
 import { useBeatsStore } from "@/store/useBeatsStore";
 
 interface Props {
@@ -269,7 +269,3 @@ function ParticipantChip({
     </li>
   );
 }
-
-// Keep PresenceState import live so future presence-driven badges
-// (e.g. "currently editing cell 3") can read the typed shape.
-void undefined as unknown as PresenceState;
