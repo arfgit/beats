@@ -168,7 +168,7 @@ export const createTransportSlice: StateCreator<
       // we only want to skip the emit when this play() was triggered
       // by a peer's broadcast.
       const sessionBefore = get().collab.session;
-      const fromRemote = sessionBefore.applyingRemote;
+      const fromRemote = sessionBefore.applyingRemote > 0;
       await get().ensureEngineStarted();
       // Flush any in-progress pattern edits back into the selected cell
       // before starting — otherwise the matrix controller would begin
@@ -195,7 +195,7 @@ export const createTransportSlice: StateCreator<
     stop: () => {
       if (!audioEngine.isStarted()) return;
       const session = get().collab.session;
-      const fromRemote = session.applyingRemote;
+      const fromRemote = session.applyingRemote > 0;
       matrixController?.stop();
       set((s) => ({ transport: { ...s.transport, isPlaying: false } }));
       track("stop");

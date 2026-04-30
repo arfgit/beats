@@ -68,11 +68,14 @@ export interface CollabSlice {
       presence: Record<string, PresenceState>;
       role: SessionParticipant["role"] | null;
       /**
-       * Set to true while a remote edit is being applied locally — the
-       * patternSlice / matrixSlice actions check this and skip the
-       * emit-back step so we don't echo the same op forever.
+       * Reentrant counter for "applying a remote edit." 0 = idle, >0 =
+       * a remote edit is in flight. The patternSlice / matrixSlice
+       * actions check this (truthy) and skip the emit-back step so we
+       * don't echo the op back. It's a counter rather than a boolean so
+       * a nested or concurrent apply can't have its outer call flip the
+       * flag off early.
        */
-      applyingRemote: boolean;
+      applyingRemote: number;
       /** RTDB listener teardown closures, invoked on leave. */
       detach: Array<() => void>;
     };
@@ -148,7 +151,7 @@ function freshSession(): CollabSlice["collab"]["session"] {
     participants: {},
     presence: {},
     role: null,
-    applyingRemote: false,
+    applyingRemote: 0,
     detach: [],
   };
 }
@@ -626,11 +629,16 @@ function applyRemoteSnapshot(
 
   // Mark applyingRemote so the broadcast-back guard suppresses
   // emit-edit on the sets we're about to do (we don't want the join
-  // snapshot to re-broadcast as N edits).
+  // snapshot to re-broadcast as N edits). Counter increments rather
+  // than flag-set so a nested apply doesn't reset the outer call's
+  // suppression.
   set((s) => ({
     collab: {
       ...s.collab,
-      session: { ...s.collab.session, applyingRemote: true },
+      session: {
+        ...s.collab.session,
+        applyingRemote: s.collab.session.applyingRemote + 1,
+      },
     },
   }));
   try {
@@ -653,7 +661,10 @@ function applyRemoteSnapshot(
     set((s) => ({
       collab: {
         ...s.collab,
-        session: { ...s.collab.session, applyingRemote: false },
+        session: {
+          ...s.collab.session,
+          applyingRemote: Math.max(0, s.collab.session.applyingRemote - 1),
+        },
       },
     }));
   }
@@ -673,7 +684,10 @@ function applyRemoteEdit(
   set((s) => ({
     collab: {
       ...s.collab,
-      session: { ...s.collab.session, applyingRemote: true },
+      session: {
+        ...s.collab.session,
+        applyingRemote: s.collab.session.applyingRemote + 1,
+      },
     },
   }));
   try {
@@ -712,7 +726,10 @@ function applyRemoteEdit(
     set((s) => ({
       collab: {
         ...s.collab,
-        session: { ...s.collab.session, applyingRemote: false },
+        session: {
+          ...s.collab.session,
+          applyingRemote: Math.max(0, s.collab.session.applyingRemote - 1),
+        },
       },
     }));
   }
