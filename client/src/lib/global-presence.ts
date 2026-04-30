@@ -4,7 +4,6 @@ import {
   ref as dbRef,
   remove,
   serverTimestamp,
-  set as dbSet,
   update,
 } from "firebase/database";
 import { rtdb } from "./firebase";
@@ -48,21 +47,19 @@ export function attachGlobalPresence(uid: string): void {
   // leave stale `tabs` entries that make a user look "online forever."
   void onDisconnect(tabRef).remove();
 
-  // Initial write. `tabs/{tabId} = true` plus a fresh lastSeen.
-  // currentSessionId is null until the tab actually joins a session
-  // (see updateCurrentSession below).
-  void dbSet(onlineRef, {
+  // Path-scoped write so a second tab's boot doesn't evict the first
+  // tab's entry under `tabs/`. The previous `dbSet` of the whole node
+  // overwrote `tabs` with a single-entry object on every new tab,
+  // making multi-tab presence unreliable: most-recent tab wins, earlier
+  // tabs' onDisconnect would later remove a key the parent already
+  // discarded. `update` merges keys, so siblings are preserved.
+  // currentSessionId is intentionally not written here — it's a
+  // per-user field owned by updateCurrentSession; resetting it on
+  // every new tab boot would clobber a sibling tab's session marker.
+  void update(onlineRef, {
     v: 1,
     lastSeen: serverTimestamp(),
-    currentSessionId: null,
-    tabs: { [tabId]: true },
-  }).catch(() => {
-    // First write may race with another tab's init — patch our tab in
-    // afterward. Rules allow uid-only writes so this is safe.
-    void update(onlineRef, {
-      [`tabs/${tabId}`]: true,
-      lastSeen: serverTimestamp(),
-    });
+    [`tabs/${tabId}`]: true,
   });
 
   handle = { uid, tabId, detached: false };
