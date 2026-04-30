@@ -7,6 +7,7 @@ import { useRouteTracker } from "@/lib/useRouteTracker";
 import { IncomingInviteToast } from "@/features/buddy/IncomingInviteToast";
 import { BuddyDrawer } from "@/features/buddy/BuddyDrawer";
 import { Button } from "./ui/Button";
+import { resetLocalState } from "@/lib/localReset";
 
 interface NavItem {
   to: string;
@@ -28,6 +29,18 @@ export function AppShell() {
   const signInWithGoogle = useBeatsStore((s) => s.signInWithGoogle);
   const signOut = useBeatsStore((s) => s.signOut);
   useRouteTracker();
+
+  const onReset = () => {
+    const ok = window.confirm(
+      "Reset local data?\n\n" +
+        "This clears the rehydrate cache, queued offline saves, " +
+        "and the service worker, then reloads. " +
+        "Use this if the app boots into a confusing state.\n\n" +
+        "Unsaved offline edits will be discarded.",
+    );
+    if (!ok) return;
+    void resetLocalState();
+  };
 
   const isAuthed = status === "authed" && !!user;
   const visibleNavItems = navItems.filter(
@@ -178,6 +191,7 @@ export function AppShell() {
                 displayName={user.displayName}
                 onSignOut={() => void signOut()}
                 onOpenBuddies={() => setBuddyDrawerOpen(true)}
+                onReset={onReset}
                 incomingRequestCount={incomingRequestCount}
               />
             ) : status === "loading" ? (
@@ -357,6 +371,16 @@ export function AppShell() {
                 sign in with google
               </Button>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onReset();
+              }}
+              className="mt-3 w-full text-left text-[11px] font-mono text-ink-muted hover:text-ink-dim transition-colors duration-150 motion-reduce:transition-none"
+            >
+              reset local data
+            </button>
           </div>
         </aside>
       </div>
@@ -466,11 +490,13 @@ function DesktopUserMenu({
   displayName,
   onSignOut,
   onOpenBuddies,
+  onReset,
   incomingRequestCount,
 }: {
   displayName: string;
   onSignOut: () => void;
   onOpenBuddies: () => void;
+  onReset: () => void;
   incomingRequestCount: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -585,6 +611,18 @@ function DesktopUserMenu({
             )}
           </button>
           <div className="border-t border-grid my-1" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onReset();
+            }}
+            title="clear local cache + service worker if the app is stuck"
+            className="w-full text-left px-3 py-2 text-sm font-mono text-ink-dim hover:bg-bg-panel-2 hover:text-ink transition-colors duration-150 motion-reduce:transition-none"
+          >
+            reset local data
+          </button>
           <button
             type="button"
             role="menuitem"
