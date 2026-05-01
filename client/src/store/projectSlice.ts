@@ -190,6 +190,12 @@ export const createProjectSlice: StateCreator<
             if (!isDirty) {
               const firstEnabled =
                 matrix.cells.find((c) => c.enabled) ?? matrix.cells[0]!;
+              // Single synchronous burst: set with applyingRemote=true so
+              // the subscribe chain skips markDirty / cache mirror, then
+              // set false in the same task. Using setTimeout(0) here used
+              // to leave a window where a user keystroke landing between
+              // the first set and the macrotask was silently discarded by
+              // markDirty's applyingRemote guard.
               set((s) => ({
                 project: {
                   ...s.project,
@@ -202,12 +208,9 @@ export const createProjectSlice: StateCreator<
                 matrix,
                 selectedCellId: firstEnabled.id,
               }));
-              // Flip the flag back on the next tick once the subscribe has fired
-              setTimeout(() => {
-                set((s) => ({
-                  project: { ...s.project, applyingRemote: false },
-                }));
-              }, 0);
+              set((s) => ({
+                project: { ...s.project, applyingRemote: false },
+              }));
             } else {
               // Local edits in flight — update the canonical `current` (revision,
               // collaborators, etc.) but keep our in-memory pattern/matrix.

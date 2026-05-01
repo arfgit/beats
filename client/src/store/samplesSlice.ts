@@ -129,15 +129,11 @@ export const createSamplesSlice: StateCreator<
             where("ownerId", "==", uid),
           );
         }
-        // Initial fetch keeps the existing API contract (caller can
-        // await this to know the picker has data).
-        const initial = await getDocs(customQ);
-        samples = initial.docs
-          .map((d) => d.data() as SampleRef & { status?: string })
-          .filter((s) => s.status !== "pending")
-          .sort((a, b) => b.createdAt - a.createdAt);
-        // Then attach a live listener so every later add/remove
-        // updates the slice without a manual refetch.
+        // Attach the live listener BEFORE the initial getDocs await so
+        // resetCustomSamples can always tear it down — previously a
+        // sign-out landing between the await and the onSnapshot call
+        // left customSamplesUnsub null at reset time, leaking the
+        // listener that subsequently registered.
         customSamplesUnsub = onSnapshot(
           customQ,
           (snap) => {
@@ -156,6 +152,15 @@ export const createSamplesSlice: StateCreator<
             console.warn("[samples] custom listener error", err);
           },
         );
+        // Initial fetch keeps the existing API contract (caller can
+        // await this to know the picker has data). The listener may
+        // also fire its first callback in this window with the same
+        // data — both paths write equivalent state to the store.
+        const initial = await getDocs(customQ);
+        samples = initial.docs
+          .map((d) => d.data() as SampleRef & { status?: string })
+          .filter((s) => s.status !== "pending")
+          .sort((a, b) => b.createdAt - a.createdAt);
       } else {
         // Preferred: composite-indexed query with server-side ordering.
         const preferred = query(

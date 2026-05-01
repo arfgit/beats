@@ -14,7 +14,7 @@ import {
 import { validateBody } from "../lib/validate.js";
 import {
   createProjectBody,
-  inviteBody,
+  addCollaboratorBody,
   updateProjectBody,
 } from "../lib/schemas.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
@@ -278,7 +278,7 @@ router.post(
   "/projects/:id/collaborators",
   requireAuth,
   writeLimiter,
-  validateBody(inviteBody),
+  validateBody(addCollaboratorBody),
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
       const { email } = req.body as { email: string };

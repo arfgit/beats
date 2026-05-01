@@ -162,7 +162,7 @@ export const updateProjectBody = z.object({
   isPublic: z.boolean().optional(),
 });
 
-export const inviteBody = z.object({
+export const addCollaboratorBody = z.object({
   email: z.string().email(),
 });
 
