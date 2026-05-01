@@ -9,6 +9,8 @@ export interface AuthedRequest extends Request {
     email?: string;
     emailVerified: boolean;
     role?: "user" | "admin";
+    /** Firebase sign-in provider, e.g. "google.com" or "password". */
+    signInProvider?: string;
   };
 }
 
@@ -29,6 +31,7 @@ export async function requireAuth(
       email: decoded.email,
       emailVerified: decoded.email_verified ?? false,
       role: (decoded.role as "user" | "admin" | undefined) ?? "user",
+      signInProvider: decoded.firebase?.sign_in_provider,
     };
     next();
   } catch (err) {

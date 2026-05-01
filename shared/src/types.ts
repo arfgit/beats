@@ -173,16 +173,32 @@ export interface SocialLink {
   url: string;
 }
 
+export type AuthProvider = "google.com" | "password";
+
 export interface User {
   id: string;
+  schemaVersion?: 2;
   displayName: string;
+  /**
+   * Public handle, lowercase canonical form per USERNAME_REGEX. Empty
+   * string when the user hasn't claimed one yet — the auth slice maps
+   * that to `status: "needsUsername"` and the app shell renders the
+   * onboarding takeover until claimed.
+   */
+  username: string;
+  /** Lowercase mirror used for `usernames/{usernameLower}` reservation lookups. */
+  usernameLower: string;
   email: string;
+  emailVerified: boolean;
+  /** Sign-in providers seen for this account. Multi-element once linking ships. */
+  authProviders: AuthProvider[];
   photoUrl: string | null;
   bio: string;
   socialLinks: SocialLink[];
   role: "user" | "admin";
   isPublic: boolean;
   createdAt: number;
+  buddyCode?: string;
 }
 
 export type ApiErrorCode =

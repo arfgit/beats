@@ -1,25 +1,55 @@
 import { Router, type Response, type NextFunction } from "express";
-import type { User } from "@beats/shared";
+import type { AuthProvider, User } from "@beats/shared";
 import { db } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
-import { NotFoundError } from "../lib/errors.js";
+import { NotFoundError, ValidationError } from "../lib/errors.js";
 
 const router = Router();
+
+function providerFromToken(signInProvider: string | undefined): AuthProvider {
+  // Firebase Auth's sign_in_provider claim — currently we accept Google
+  // and Email/Password. Phone is on the v1.1 backlog and would require
+  // a corresponding User shape change (nullable email).
+  if (signInProvider === "google.com") return "google.com";
+  if (signInProvider === "password") return "password";
+  // Default to "password" rather than throwing so a future provider rolled
+  // into Firebase Auth doesn't 500 the session endpoint; the user can still
+  // claim a username and use the app while we add explicit support.
+  return "password";
+}
 
 router.post(
   "/auth/session",
   requireAuth,
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
-      const { uid, email } = req.auth!;
+      const { uid, email, emailVerified, signInProvider } = req.auth!;
+      // v1 invariant: every supported provider issues an email. Phone
+      // is deferred — when it lands, this guard moves into a per-provider
+      // branch that allows email=null only for sign_in_provider=phone.
+      if (!email) {
+        return next(
+          ValidationError(
+            "auth token missing email — provider not supported in v1",
+          ),
+        );
+      }
+      const provider = providerFromToken(signInProvider);
       const userRef = db.collection("users").doc(uid);
       const snap = await userRef.get();
 
       if (!snap.exists) {
         const newUser: User = {
           id: uid,
-          displayName: email?.split("@")[0] ?? "user",
-          email: email ?? "",
+          schemaVersion: 2,
+          // Username starts empty — client maps to status "needsUsername"
+          // and renders the onboarding takeover until claimUsername runs.
+          username: "",
+          usernameLower: "",
+          displayName: email.split("@")[0] ?? "user",
+          email,
+          emailVerified: !!emailVerified,
+          authProviders: [provider],
           photoUrl: null,
           bio: "",
           socialLinks: [],
@@ -44,7 +74,28 @@ router.post(
         }
       }
 
-      res.json({ data: snap.data() });
+      // Existing user — refresh emailVerified + authProviders if drift.
+      // Don't backfill `false` for legacy docs that lack the field; only
+      // write when we have a positive signal from the current token.
+      const existing = snap.data() as Partial<User>;
+      const updates: Record<string, unknown> = {};
+      if (typeof emailVerified === "boolean") {
+        if (existing.emailVerified !== emailVerified) {
+          updates.emailVerified = emailVerified;
+        }
+      }
+      const providers = existing.authProviders ?? [];
+      if (!providers.includes(provider)) {
+        updates.authProviders = [...providers, provider];
+      }
+      if (Object.keys(updates).length > 0) {
+        await userRef.update(updates);
+      }
+
+      const refreshed = Object.keys(updates).length
+        ? (await userRef.get()).data()
+        : snap.data();
+      res.json({ data: refreshed });
     } catch (err) {
       next(err);
     }
