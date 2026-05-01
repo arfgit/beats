@@ -3,8 +3,30 @@ import type { AuthProvider, User } from "@beats/shared";
 import { db } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
+import {
+  claimUsername,
+  isUsernameAvailable,
+} from "../services/username-service.js";
+import { validateBody } from "../lib/validate.js";
+import { claimUsernameBody } from "../lib/schemas.js";
+import { createRateLimiter } from "../lib/rate-limit.js";
 
 const router = Router();
+
+// Username availability is an enumeration vector — defense in depth via
+// the existing in-memory token bucket. Acknowledged best-effort at
+// scale; v1.1 backlog tracks "harden auth enumeration surface" with
+// App Check / reCAPTCHA before any public growth event.
+const checkUsernameLimiter = createRateLimiter({
+  capacity: 30,
+  refillPerMin: 30,
+});
+// Claim is auth-required and writes — much stricter cap, since each
+// successful claim costs a Firestore tx and abuse here is account-scoped.
+const claimUsernameLimiter = createRateLimiter({
+  capacity: 5,
+  refillPerMin: 10,
+});
 
 function providerFromToken(signInProvider: string | undefined): AuthProvider {
   // Firebase Auth's sign_in_provider claim — currently we accept Google
@@ -119,5 +141,40 @@ router.get(
 router.post("/auth/signout", requireAuth, (_req, res) => {
   res.json({ data: { ok: true } });
 });
+
+// Advisory availability check — UX hint only. The /auth/claim endpoint
+// is the source of truth and may still 409 if a different user wins
+// the claim race between this probe and the claim.
+router.get(
+  "/auth/check-username/:handle",
+  requireAuth,
+  checkUsernameLimiter,
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const handle = req.params.handle ?? "";
+      const available = await isUsernameAvailable(handle);
+      res.json({ data: { available } });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.post(
+  "/auth/claim-username",
+  requireAuth,
+  claimUsernameLimiter,
+  validateBody(claimUsernameBody),
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { uid } = req.auth!;
+      const { username } = req.body as { username: string };
+      const updated = await claimUsername(uid, username);
+      res.json({ data: updated });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 export default router;

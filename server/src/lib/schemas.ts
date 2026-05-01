@@ -166,6 +166,12 @@ export const addCollaboratorBody = z.object({
   email: z.string().email(),
 });
 
+// Loose Zod cap so the validator delegates the strict regex/reserved-word
+// check to validateUsername in @beats/shared (single source of truth).
+export const claimUsernameBody = z.object({
+  username: z.string().min(1).max(40),
+});
+
 export const uploadUrlBody = z.object({
   title: z.string().min(1).max(120),
   durationMs: z.number().int().min(0),

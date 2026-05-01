@@ -30,6 +30,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Username reservations: { uid, claimedAt, original }. Authed users
+    // can probe for existence (the /auth/check-username route does this
+    // server-side, but the rule allows it directly too — the doc only
+    // contains the lowercase handle and the claiming uid, no PII). All
+    // writes go through the Admin SDK transaction in
+    // server/src/services/username-service.ts.
+    match /usernames/{handle} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Projects: owner / collaborator / public.
     match /projects/{projectId} {
       // Public projects readable by anyone (gallery browsing while signed-out).
