@@ -1,18 +1,29 @@
 import type { StateCreator } from "zustand";
 import {
+  createUserWithEmailAndPassword,
+  getRedirectResult,
+  onIdTokenChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
-  getRedirectResult,
   signOut as fbSignOut,
-  onIdTokenChanged,
-  type User as FbUser,
   type AuthError,
+  type User as FbUser,
 } from "firebase/auth";
 import type { User } from "@beats/shared";
 import { auth, googleProvider } from "@/lib/firebase";
 import { api, ApiCallError } from "@/lib/api";
+import type { BeatsStore } from "./useBeatsStore";
 
-export type AuthStatus = "idle" | "loading" | "authed" | "anon" | "error";
+export type AuthStatus =
+  | "idle"
+  | "loading"
+  | "authed"
+  | "anon"
+  | "error"
+  | "needsUsername";
 
 export interface AuthSlice {
   auth: {
@@ -23,6 +34,12 @@ export interface AuthSlice {
   };
   bootAuth: () => () => void;
   signInWithGoogle: () => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  signUpWithPassword: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
+  claimUsername: (username: string) => Promise<void>;
+  refreshSession: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -51,8 +68,18 @@ function isCoopPopupFailure(err: unknown): boolean {
   );
 }
 
-export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
+/**
+ * Map a User doc to the auth status. Empty `username` means the doc
+ * exists but the public handle hasn't been claimed yet — the AppShell
+ * renders the UsernameOnboarding takeover until claimUsername runs.
+ */
+function statusFromUser(user: User): "authed" | "needsUsername" {
+  return user.username ? "authed" : "needsUsername";
+}
+
+export const createAuthSlice: StateCreator<BeatsStore, [], [], AuthSlice> = (
   set,
+  get,
 ) => ({
   auth: { user: null, fbUser: null, status: "idle", errorMessage: null },
 
@@ -91,7 +118,12 @@ export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
             headers: { Authorization: `Bearer ${idToken}` },
           });
           set({
-            auth: { user, fbUser, status: "authed", errorMessage: null },
+            auth: {
+              user,
+              fbUser,
+              status: statusFromUser(user),
+              errorMessage: null,
+            },
           });
         } catch (err) {
           const message =
@@ -152,6 +184,97 @@ export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
     }
   },
 
+  signInWithPassword: async (email, password) => {
+    set((s) => ({
+      auth: { ...s.auth, status: "loading", errorMessage: null },
+    }));
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      // onIdTokenChanged drives the rest — bootAuth's listener picks up
+      // the new credential and POSTs /auth/session.
+    } catch (err) {
+      const code = isAuthError(err) ? err.code : "";
+      set((s) => ({
+        auth: {
+          ...s.auth,
+          status: "error",
+          errorMessage: passwordSignInMessage(code, err),
+        },
+      }));
+    }
+  },
+
+  signUpWithPassword: async (email, password) => {
+    set((s) => ({
+      auth: { ...s.auth, status: "loading", errorMessage: null },
+    }));
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      // Fire-and-forget verification — failure here shouldn't block sign-in,
+      // and a "Resend" CTA in the profile UI gives the user a recovery path.
+      void sendEmailVerification(cred.user).catch((err) => {
+        console.warn("[auth] sendEmailVerification failed", err);
+      });
+      // onIdTokenChanged drives the rest. The server creates the User doc
+      // with username="" and the listener flips status to "needsUsername".
+    } catch (err) {
+      const code = isAuthError(err) ? err.code : "";
+      set((s) => ({
+        auth: {
+          ...s.auth,
+          status: "error",
+          errorMessage: passwordSignUpMessage(code, err),
+        },
+      }));
+    }
+  },
+
+  sendPasswordReset: async (email) => {
+    // Don't flip global status — this is an inline form action, the
+    // caller surfaces success/failure locally.
+    await sendPasswordResetEmail(auth, email);
+  },
+
+  resendVerificationEmail: async () => {
+    const fbUser = get().auth.fbUser;
+    if (!fbUser) throw new Error("not signed in");
+    await sendEmailVerification(fbUser);
+  },
+
+  claimUsername: async (username) => {
+    // Server is the source of truth; client validates inline for UX
+    // but the 409 / 400 path is the only one that matters for state.
+    const updated = await api.post<User>("/auth/claim-username", { username });
+    set((s) => ({
+      auth: {
+        ...s.auth,
+        user: updated,
+        status: statusFromUser(updated),
+        errorMessage: null,
+      },
+    }));
+  },
+
+  refreshSession: async () => {
+    // Force a fresh ID token so emailVerified / authProviders pick up
+    // any change that happened in another tab or via a verification link.
+    const fbUser = get().auth.fbUser;
+    if (!fbUser) return;
+    await fbUser.reload();
+    const idToken = await fbUser.getIdToken(true);
+    const user = await api.post<User>("/auth/session", undefined, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    set((s) => ({
+      auth: {
+        ...s.auth,
+        user,
+        status: statusFromUser(user),
+        errorMessage: null,
+      },
+    }));
+  },
+
   signOut: async () => {
     // Drop out of any live session before tearing down the auth.
     // Without this, the participant slot lingers (until the websocket
@@ -170,3 +293,41 @@ export const createAuthSlice: StateCreator<AuthSlice, [], [], AuthSlice> = (
     await fbSignOut(auth);
   },
 });
+
+// Friendly Firebase Auth error mapping. Firebase's default messages
+// like "FirebaseError: Firebase: Error (auth/wrong-password)." are
+// useless to non-technical users; we narrow to the codes we expect
+// from each flow and translate to UI copy.
+function passwordSignInMessage(code: string, err: unknown): string {
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "incorrect email or password";
+    case "auth/too-many-requests":
+      return "too many attempts — try again in a minute";
+    case "auth/user-disabled":
+      return "this account has been disabled";
+    case "auth/invalid-email":
+      return "that doesn't look like a valid email";
+    case "auth/network-request-failed":
+      return "network error — check your connection";
+    default:
+      return err instanceof Error ? err.message : "sign-in failed";
+  }
+}
+
+function passwordSignUpMessage(code: string, err: unknown): string {
+  switch (code) {
+    case "auth/email-already-in-use":
+      return "an account already exists for that email";
+    case "auth/weak-password":
+      return "password must be at least 6 characters";
+    case "auth/invalid-email":
+      return "that doesn't look like a valid email";
+    case "auth/network-request-failed":
+      return "network error — check your connection";
+    default:
+      return err instanceof Error ? err.message : "sign-up failed";
+  }
+}
