@@ -7,6 +7,8 @@ import { useRouteTracker } from "@/lib/useRouteTracker";
 import { IncomingInviteToast } from "@/features/buddy/IncomingInviteToast";
 import { BuddyDrawer } from "@/features/buddy/BuddyDrawer";
 import { Button } from "./ui/Button";
+import { SignInModal } from "./auth/SignInModal";
+import { UsernameOnboarding } from "./auth/UsernameOnboarding";
 import { resetLocalState } from "@/lib/localReset";
 
 interface NavItem {
@@ -26,7 +28,6 @@ export function AppShell() {
   const status = useBeatsStore((s) => s.auth.status);
   const user = useBeatsStore((s) => s.auth.user);
   const errorMessage = useBeatsStore((s) => s.auth.errorMessage);
-  const signInWithGoogle = useBeatsStore((s) => s.signInWithGoogle);
   const signOut = useBeatsStore((s) => s.signOut);
   useRouteTracker();
 
@@ -47,6 +48,7 @@ export function AppShell() {
     (item) => !item.requiresAuth || isAuthed,
   );
   const [buddyDrawerOpen, setBuddyDrawerOpen] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
   const incomingRequestCount = useBeatsStore(
     (s) =>
       Object.values(s.buddy.requests).filter((r) => r.direction === "incoming")
@@ -204,12 +206,10 @@ export function AppShell() {
                 >
                   {errorMessage ?? "sign-in failed"}
                 </span>
-                <Button onClick={() => void signInWithGoogle()}>retry</Button>
+                <Button onClick={() => setSignInOpen(true)}>retry</Button>
               </div>
             ) : (
-              <Button onClick={() => void signInWithGoogle()}>
-                sign in with google
-              </Button>
+              <Button onClick={() => setSignInOpen(true)}>sign in</Button>
             )}
           </div>
 
@@ -357,7 +357,10 @@ export function AppShell() {
                   {errorMessage ?? "an error occurred — please try again"}
                 </span>
                 <Button
-                  onClick={() => void signInWithGoogle()}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSignInOpen(true);
+                  }}
                   className="w-full"
                 >
                   retry
@@ -365,10 +368,13 @@ export function AppShell() {
               </div>
             ) : (
               <Button
-                onClick={() => void signInWithGoogle()}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSignInOpen(true);
+                }}
                 className="w-full"
               >
-                sign in with google
+                sign in
               </Button>
             )}
             <button
@@ -389,6 +395,8 @@ export function AppShell() {
         <Outlet />
       </main>
       <IncomingInviteToast />
+      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} />
+      {status === "needsUsername" && <UsernameOnboarding />}
       <BuddyDrawer
         open={buddyDrawerOpen}
         onClose={() => setBuddyDrawerOpen(false)}
