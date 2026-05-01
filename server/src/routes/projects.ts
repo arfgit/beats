@@ -33,6 +33,14 @@ router.post(
       const { title, pattern, isPublic } = req.body as ReturnType<
         typeof createProjectBody.parse
       >;
+      // Hard gate: publishing a public project requires a verified email.
+      // Drafts (private) are unrestricted so unverified users can still
+      // build locally — they just can't share until they verify.
+      if (isPublic === true && !req.auth!.emailVerified) {
+        return next(
+          ForbiddenError("verify your email before creating a public project"),
+        );
+      }
       const id = nanoid(14);
       const now = Date.now();
       const project: Project = {
@@ -128,8 +136,16 @@ router.patch(
           safeUpdates.pattern = body.pattern;
         }
         if (isOwner && body.title !== undefined) safeUpdates.title = body.title;
-        if (isOwner && body.isPublic !== undefined)
+        if (isOwner && body.isPublic !== undefined) {
+          // Same hard gate as creation — flipping a draft to public is
+          // the moment we care about, not the project's runtime state.
+          if (body.isPublic === true && !req.auth!.emailVerified) {
+            throw ForbiddenError(
+              "verify your email before making a project public",
+            );
+          }
           safeUpdates.isPublic = body.isPublic;
+        }
 
         const updated: Project = {
           ...project,

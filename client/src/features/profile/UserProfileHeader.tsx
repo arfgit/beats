@@ -12,11 +12,46 @@ interface Props {
 
 export function UserProfileHeader({ user, editable }: Props) {
   const pushToast = useBeatsStore((s) => s.pushToast);
+  const resendVerificationEmail = useBeatsStore(
+    (s) => s.resendVerificationEmail,
+  );
+  const refreshSession = useBeatsStore((s) => s.refreshSession);
   const [editing, setEditing] = useState(false);
   const [bio, setBio] = useState(user.bio);
   const [displayName, setDisplayName] = useState(user.displayName);
   const [isPublic, setIsPublic] = useState(user.isPublic);
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  // Cap "make public" interactions when email isn't verified — server
+  // rejects with 403, but disabling the toggle locally avoids the
+  // dead-end of clicking save and getting an error toast.
+  const isVerified = user.emailVerified === true;
+  const verificationGateActive = editable && !isVerified;
+
+  const onResend = async () => {
+    setResending(true);
+    try {
+      await resendVerificationEmail();
+      pushToast("success", "verification email sent — check your inbox");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "couldn't resend";
+      pushToast("error", message);
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    try {
+      await refreshSession();
+      pushToast("success", "checked — verification status refreshed");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "couldn't refresh session";
+      pushToast("error", message);
+    }
+  };
 
   // Live validation — same rules the server enforces via shared helper.
   // Empty edit state (nothing typed yet) surfaces as "not valid" which
@@ -56,6 +91,29 @@ export function UserProfileHeader({ user, editable }: Props) {
 
   return (
     <header className="border border-grid rounded bg-bg-panel/60 p-4 space-y-3">
+      {verificationGateActive && (
+        <div className="flex flex-col gap-2 rounded border border-neon-amber/60 bg-neon-amber/5 p-3 text-xs">
+          <p className="text-neon-amber font-mono">
+            verify your email to publish your profile or share public projects.
+          </p>
+          <p className="text-[11px] text-ink-muted font-mono break-words">
+            we sent a link to {user.email}. click the link, then hit "i&rsquo;ve
+            verified" to refresh your session.
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              variant="ghost"
+              onClick={() => void onResend()}
+              disabled={resending}
+            >
+              {resending ? "sending…" : "resend email"}
+            </Button>
+            <Button onClick={() => void onRefresh()}>
+              i&rsquo;ve verified
+            </Button>
+          </div>
+        </div>
+      )}
       {editing ? (
         <div className="space-y-3">
           <label className="block">
@@ -113,14 +171,24 @@ export function UserProfileHeader({ user, editable }: Props) {
               className="mt-1 w-full px-2 py-1 bg-bg-panel border border-grid rounded text-ink font-mono text-sm resize-none"
             />
           </label>
-          <label className="inline-flex items-center gap-2 text-xs text-ink-dim">
+          <label
+            className={`inline-flex items-center gap-2 text-xs ${
+              verificationGateActive
+                ? "text-ink-muted cursor-not-allowed"
+                : "text-ink-dim"
+            }`}
+          >
             <input
               type="checkbox"
               checked={isPublic}
               onChange={(e) => setIsPublic(e.target.checked)}
+              disabled={verificationGateActive}
               className="accent-neon-green"
             />
             public profile (your tracks visible in gallery)
+            {verificationGateActive && (
+              <span className="text-neon-amber">— verify email first</span>
+            )}
           </label>
           <div className="flex gap-2 justify-end">
             <Button

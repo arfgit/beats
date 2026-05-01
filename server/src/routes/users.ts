@@ -2,7 +2,7 @@ import { Router, type NextFunction, type Response } from "express";
 import type { User } from "@beats/shared";
 import { db } from "../services/firebase-admin.js";
 import { requireAuth, type AuthedRequest } from "../lib/auth.js";
-import { NotFoundError } from "../lib/errors.js";
+import { ForbiddenError, NotFoundError } from "../lib/errors.js";
 import { validateBody } from "../lib/validate.js";
 import { updateUserBody } from "../lib/schemas.js";
 import { lookupUsername } from "../services/username-service.js";
@@ -99,6 +99,14 @@ router.patch(
         photoUrl?: string | null;
         isPublic?: boolean;
       };
+      // Hard gate: turning the profile public requires a verified email.
+      // Soft warning (UI banner) is in the client; this is the
+      // server-side enforcement that survives any client bypass.
+      if (body.isPublic === true && !req.auth!.emailVerified) {
+        return next(
+          ForbiddenError("verify your email before making your profile public"),
+        );
+      }
       const safeUpdate: Record<string, unknown> = {};
       if (body.displayName !== undefined)
         safeUpdate.displayName = body.displayName;
