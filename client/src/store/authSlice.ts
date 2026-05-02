@@ -69,11 +69,16 @@ function isCoopPopupFailure(err: unknown): boolean {
 }
 
 /**
- * Map a User doc to the auth status. Empty `username` means the doc
- * exists but the public handle hasn't been claimed yet — the AppShell
- * renders the UsernameOnboarding takeover until claimUsername runs.
+ * Map a User doc to the auth status. Empty/missing `username` means
+ * the doc exists but the public handle hasn't been claimed yet — the
+ * AppShell renders the UsernameOnboarding takeover until claimUsername
+ * runs. Defensive against the server returning a malformed/empty
+ * response (would otherwise throw on `undefined.username`).
  */
-function statusFromUser(user: User): "authed" | "needsUsername" {
+function statusFromUser(
+  user: User | null | undefined,
+): "authed" | "needsUsername" {
+  if (!user) return "needsUsername";
   return user.username ? "authed" : "needsUsername";
 }
 
@@ -242,9 +247,18 @@ export const createAuthSlice: StateCreator<BeatsStore, [], [], AuthSlice> = (
   },
 
   claimUsername: async (username) => {
-    // Server is the source of truth; client validates inline for UX
-    // but the 409 / 400 path is the only one that matters for state.
-    const updated = await api.post<User>("/auth/claim-username", { username });
+    // Pass the token explicitly to avoid the auth.currentUser race that
+    // bootAuth's listener works around — onIdTokenChanged just fired and
+    // the singleton may briefly lag behind the fbUser stored in state.
+    const fbUser = get().auth.fbUser;
+    const headers = fbUser
+      ? { Authorization: `Bearer ${await fbUser.getIdToken()}` }
+      : undefined;
+    const updated = await api.post<User>(
+      "/auth/claim-username",
+      { username },
+      { headers },
+    );
     set((s) => ({
       auth: {
         ...s.auth,

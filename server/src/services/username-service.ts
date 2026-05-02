@@ -71,9 +71,13 @@ export async function claimUsername(
     }
 
     // Free the user's prior reservation if they're renaming. Same tx
-    // so we never end up holding two reservations under one uid.
+    // so we never end up holding two reservations under one uid. Read
+    // the old reservation first to lock it under the transaction —
+    // otherwise two concurrent renames could both blind-delete and
+    // leave the index inconsistent.
     if (user.usernameLower && user.usernameLower !== lower) {
       const oldRef = db.collection("usernames").doc(user.usernameLower);
+      await tx.get(oldRef);
       tx.delete(oldRef);
     }
 

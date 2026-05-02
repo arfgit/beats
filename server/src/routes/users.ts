@@ -35,8 +35,39 @@ function projectUserForViewer(user: User, isSelf: boolean): Partial<User> {
     displayName: user.displayName,
     photoUrl: user.photoUrl,
     isPublic: false,
+    // createdAt is intentionally exposed even on private profiles —
+    // the header's "joined ..." line renders it for every viewer and
+    // the date alone isn't sensitive identity material.
+    createdAt: user.createdAt,
   };
 }
+
+/**
+ * Public profile lookup by username — same projection as /users/:uid
+ * but keyed on the canonical handle. Two-hop read: usernames/{lower}
+ * → uid → users/{uid}.
+ *
+ * Declared BEFORE /users/:uid so Express matches `/users/by-username/foo`
+ * to this handler instead of treating "by-username" as a uid.
+ */
+router.get(
+  "/users/by-username/:handle",
+  requireAuth,
+  async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    try {
+      const handle = req.params.handle ?? "";
+      const uid = await lookupUsername(handle);
+      if (!uid) return next(NotFoundError("user not found"));
+      const snap = await db.collection("users").doc(uid).get();
+      if (!snap.exists) return next(NotFoundError("user not found"));
+      const user = snap.data() as User;
+      const isSelf = user.id === req.auth!.uid;
+      res.json({ data: projectUserForViewer(user, isSelf) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 /**
  * Public profile read — auth required. For private profiles we only
@@ -49,30 +80,6 @@ router.get(
   async (req: AuthedRequest, res: Response, next: NextFunction) => {
     try {
       const snap = await db.collection("users").doc(req.params.uid!).get();
-      if (!snap.exists) return next(NotFoundError("user not found"));
-      const user = snap.data() as User;
-      const isSelf = user.id === req.auth!.uid;
-      res.json({ data: projectUserForViewer(user, isSelf) });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-/**
- * Public profile lookup by username — same projection as /users/:uid
- * but keyed on the canonical handle. Two-hop read: usernames/{lower}
- * → uid → users/{uid}.
- */
-router.get(
-  "/users/by-username/:handle",
-  requireAuth,
-  async (req: AuthedRequest, res: Response, next: NextFunction) => {
-    try {
-      const handle = req.params.handle ?? "";
-      const uid = await lookupUsername(handle);
-      if (!uid) return next(NotFoundError("user not found"));
-      const snap = await db.collection("users").doc(uid).get();
       if (!snap.exists) return next(NotFoundError("user not found"));
       const user = snap.data() as User;
       const isSelf = user.id === req.auth!.uid;

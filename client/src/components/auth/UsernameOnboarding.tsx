@@ -67,19 +67,22 @@ export function UsernameOnboarding() {
     }
     setAvailability({ kind: "checking" });
     const handle = validation.normalized;
+    let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const result = await api.get<{ available: boolean }>(
           `/auth/check-username/${encodeURIComponent(handle)}`,
         );
-        // Drop the response if the user kept typing — a faster check
-        // for the new value will overwrite this one shortly.
-        if (validateUsername(value).ok) {
-          setAvailability(
-            result.available ? { kind: "available" } : { kind: "taken" },
-          );
-        }
+        // Drop the response if the effect has been re-run with a newer
+        // value — a slower in-flight request must not overwrite the
+        // freshest user-visible state, otherwise the claim button
+        // could enable for a stale handle.
+        if (cancelled) return;
+        setAvailability(
+          result.available ? { kind: "available" } : { kind: "taken" },
+        );
       } catch (err) {
+        if (cancelled) return;
         const message =
           err instanceof ApiCallError
             ? err.apiError.message
@@ -87,7 +90,10 @@ export function UsernameOnboarding() {
         setAvailability({ kind: "error", message });
       }
     }, AVAILABILITY_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [value]);
 
   const onSubmit = async (e: React.FormEvent) => {
